@@ -70,7 +70,7 @@ the settings.
 
 Now you should be able to run the image with following command
 ```
-docker run -d -v /PATH/TO/my-frtizinfluxdb.ini:/app/idefault.ini --name fritzinfluxdb fritzinfluxdb
+docker run -d -v /PATH/TO/my-frtizinfluxdb.ini:/app/config/fritzinfluxdb.ini --name fritzinfluxdb fritzinfluxdb
 ```
 
 ## Upgrading
@@ -95,3 +95,6 @@ https://wiki.fhem.de/w/index.php?title=FRITZBOX
 >You can check out the full license [here](LICENSE.txt)
 
 This project is licensed under the terms of the **MIT** license.
+
+# Additional changes in this repository
+To make it usable on QNAP Container Station, I moved the configuration file to directory 'config' which can be replaced through the GUI in Container Station. The python script was adapted.
