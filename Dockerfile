@@ -6,6 +6,10 @@ WORKDIR /app
 # Copy the current directory contents into the container at /app
 COPY . /app
 
+# move config file to config directory
+COPY fritzinfluxdb.ini-sample /app/config
+RUN rm /app/fritzinfluxdb.ini-sample
+
 # Install any needed packages specified in requirements.txt
 RUN pip install --trusted-host pypi.python.org -r requirements.txt
 
