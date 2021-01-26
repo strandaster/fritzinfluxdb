@@ -19,15 +19,15 @@ import fritzconnection
 import influxdb
 
 
-__version__ = "0.3.0_strandaster"
-__version_date__ = "2021-01-25"
+__version__ = "0.3.0"
+__version_date__ = "2020-08-03"
 __description__ = "fritzinfluxdb"
 __license__ = "MIT"
 
 
 # default vars
 running = True
-default_config = os.path.join(os.path.dirname(__file__), '/config/fritzinfluxdb.ini')
+default_config = os.path.join(os.path.dirname(__file__), 'fritzinfluxdb.ini')
 default_log_level = logging.INFO
 
 
