@@ -65,12 +65,12 @@ cd fritzinfluxdb
 docker build -t fritzinfluxdb .
 ```
 
-Copy the config from the [example](default.ini) to ```my-frtizinfluxdb.ini``` and edit
+Copy the config from the [example](default.ini) to ```config/fritzinfluxdb.ini``` and edit
 the settings.
 
 Now you should be able to run the image with following command
 ```
-docker run -d -v /PATH/TO/my-frtizinfluxdb.ini:/app/config/fritzinfluxdb.ini --name fritzinfluxdb fritzinfluxdb
+docker run -d -v /PATH/TO/CONFIG_DIRECTORY:/app/config/ --name fritzinfluxdb fritzinfluxdb
 ```
 
 ## Upgrading
