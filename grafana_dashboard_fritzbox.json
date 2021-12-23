@@ -24,7 +24,7 @@
       "bars": false,
       "dashLength": 10,
       "dashes": false,
-      "datasource": "InfluxDB Home",
+      "datasource": "InfluxDB-fritz",
       "fill": 1,
       "gridPos": {
         "h": 8,
@@ -662,7 +662,7 @@
         "#508642",
         "#1f78c1"
       ],
-      "datasource": "InfluxDB Home",
+      "datasource": "InfluxDB-fritz",
       "format": "none",
       "gauge": {
         "maxValue": 100,
@@ -778,7 +778,7 @@
         "rgba(237, 129, 40, 0.89)",
         "#1f78c1"
       ],
-      "datasource": "InfluxDB Home",
+      "datasource": "InfluxDB-fritz",
       "decimals": 2,
       "format": "dtdurations",
       "gauge": {
@@ -895,7 +895,7 @@
         "rgba(237, 129, 40, 0.89)",
         "rgba(50, 172, 45, 0.97)"
       ],
-      "datasource": "InfluxDB Home",
+      "datasource": "InfluxDB-fritz",
       "decimals": 2,
       "format": "dtdurations",
       "gauge": {
@@ -1014,7 +1014,7 @@
         "rgba(237, 129, 40, 0.89)",
         "#1f78c1"
       ],
-      "datasource": "InfluxDB Home",
+      "datasource": "InfluxDB-fritz",
       "decimals": 1,
       "format": "Bps",
       "gauge": {
@@ -1121,7 +1121,7 @@
         "rgba(237, 129, 40, 0.89)",
         "#e24d42"
       ],
-      "datasource": "InfluxDB Home",
+      "datasource": "InfluxDB-fritz",
       "decimals": 1,
       "format": "Bps",
       "gauge": {
@@ -1228,7 +1228,7 @@
         "rgba(237, 129, 40, 0.89)",
         "rgba(50, 172, 45, 0.97)"
       ],
-      "datasource": "InfluxDB Home",
+      "datasource": "InfluxDB-fritz",
       "decimals": 3,
       "format": "decbytes",
       "gauge": {
@@ -1328,7 +1328,7 @@
         "rgba(237, 129, 40, 0.89)",
         "rgba(50, 172, 45, 0.97)"
       ],
-      "datasource": "InfluxDB Home",
+      "datasource": "InfluxDB-fritz",
       "decimals": null,
       "format": "decbytes",
       "gauge": {
@@ -1430,7 +1430,7 @@
         "rgba(237, 129, 40, 0.89)",
         "rgba(50, 172, 45, 0.97)"
       ],
-      "datasource": "InfluxDB Home",
+      "datasource": "InfluxDB-fritz",
       "decimals": 3,
       "format": "decbytes",
       "gauge": {
@@ -1552,7 +1552,7 @@
         "rgba(237, 129, 40, 0.89)",
         "rgba(50, 172, 45, 0.97)"
       ],
-      "datasource": "InfluxDB Home",
+      "datasource": "InfluxDB-fritz",
       "decimals": 3,
       "format": "decbytes",
       "gauge": {
@@ -1678,7 +1678,7 @@
       "bars": true,
       "dashLength": 10,
       "dashes": false,
-      "datasource": "InfluxDB Home",
+      "datasource": "InfluxDB-fritz",
       "editable": true,
       "fill": 0,
       "grid": {},
@@ -1877,7 +1877,7 @@
       "bars": true,
       "dashLength": 10,
       "dashes": false,
-      "datasource": "InfluxDB Home",
+      "datasource": "InfluxDB-fritz",
       "fill": 1,
       "gridPos": {
         "h": 7,
@@ -2054,7 +2054,7 @@
     },
     {
       "columns": [],
-      "datasource": "InfluxDB Home",
+      "datasource": "InfluxDB-fritz",
       "fontSize": "100%",
       "gridPos": {
         "h": 10,
@@ -2276,7 +2276,7 @@
     },
     {
       "columns": [],
-      "datasource": "InfluxDB Home",
+      "datasource": "InfluxDB-fritz",
       "fontSize": "100%",
       "gridPos": {
         "h": 8,
