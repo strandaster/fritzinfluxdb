@@ -17,6 +17,6 @@ RUN pip install --trusted-host pypi.python.org -r requirements.txt
 RUN mkdir config
 
 # run daemon
-CMD [ "python", "./app/fritzinfluxdb.py" ]
+CMD [ "python", "/app/fritzinfluxdb.py" ]
 
 # EOF
