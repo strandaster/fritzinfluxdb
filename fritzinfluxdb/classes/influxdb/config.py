@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+#  Copyright (c) 2022 - 2022 Ricardo Bartels. All rights reserved.
 #
 #  fritzinfluxdb.py
 #
@@ -50,6 +51,10 @@ class InfluxDBConfig(ConfigBase):
     measurement_name = {
         "type": str,
         "default": "fritzbox"
+    }
+    data_retention_days = {
+        "type": int,
+        "default": 365
     }
 
     # version 1 parameters

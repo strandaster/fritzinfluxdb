@@ -3,9 +3,18 @@
 "fritzinfluxdb" is a tool written in python to fetch data from a FritzBox router and writes it to InfluxDB.
 It is equal capable as fritzcollectd and directly writing to InfluxDB.
 
+Data collected:
+* connection related information (amount of data, throughput, daily up/download statistics)
+* all log messages
+* home automation (temperature, power consumption, heating settings)
+* phone call list (incoming, outgoing, missed, blocked)
+* system stats (cpu usage/temp, memory usage)
+* WLAN information (num clients, status, channels)
+* VPN/DynDNS information (active users, vpn hostname, DynDNS settings)
+
 Both InfluxDB 1 and InfluxDB 2 are supported
 
-![Grafana Dashboard](grafana/grafana_dashboard.png)
+![Grafana Dashboard](https://raw.githubusercontent.com/bb-Ricardo/fritzinfluxdb/main/grafana/grafana_dashboard.png)
 
 
 ## IMPORTANT:
@@ -13,7 +22,7 @@ In order work properly you need to enable "permit access for applications" and "
 
 
 ## Requirements
-* python3.6 or newer
+* python3.7 or newer
 * influxdb (InfluxDB 1)
 * influxdb_client (InfluxDB 2)
 * fritzconnection
@@ -25,14 +34,14 @@ DSL and Cable Modem FritzBox versions are supported. During startup there are me
 This is normal as there are values not available on certain models.
 
 ### Environment
-* Grafana >= 8.4.0
+* Grafana >= 9.1.0
 
 ## Setup
 * here we assume we install in `/opt`
 
 ### Configuration
 
-After cloning the repo copy the config from the [example](fritzinfluxdb-sample.ini)
+After cloning the repo copy the config from the [example](https://github.com/bb-Ricardo/fritzinfluxdb/blob/main/fritzinfluxdb-sample.ini)
 to ```fritzinfluxdb.ini``` and edit the settings. All settings are described inside the file.
 
 #### Environment variables
@@ -51,7 +60,7 @@ Environment variables will overwrite options defined in config file.
 ```shell
 sudo apt-get install python3-virtualenv
 cd /opt
-git clone https://github.com/yunity/fritzinfluxdb.git
+git clone https://github.com/bb-Ricardo/fritzinfluxdb.git
 cd fritzinfluxdb
 virtualenv -p python3 .venv
 . .venv/bin/activate
@@ -64,7 +73,7 @@ pip3 install -r requirements.txt
 ```shell
 yum install git python36-virtualenv
 cd /opt
-git clone https://github.com/yunity/fritzinfluxdb.git
+git clone https://github.com/bb-Ricardo/fritzinfluxdb.git
 cd fritzinfluxdb
 virtualenv-3 .venv
 . .venv/bin/activate
@@ -77,7 +86,7 @@ pip3 install -r requirements.txt
 ```shell
 dnf install git-core python3-virtualenv
 cd /opt
-git clone https://github.com/yunity/fritzinfluxdb.git
+git clone https://github.com/bb-Ricardo/fritzinfluxdb.git
 cd fritzinfluxdb
 virtualenv-3 .venv
 . .venv/bin/activate
@@ -90,7 +99,7 @@ pip3 install -r requirements.txt
 ```shell
 dnf install git-core
 cd /opt
-git clone https://github.com/yunity/fritzinfluxdb.git
+git clone https://github.com/bb-Ricardo/fritzinfluxdb.git
 cd fritzinfluxdb
 python3 -m venv .venv
 . .venv/bin/activate
@@ -137,7 +146,7 @@ To start the container just use:
 docker run --rm -d -v /PATH/TO/fritzinfluxdb.ini:/app/fritzinfluxdb.ini --name fritzinfluxdb bbricardo/fritzinfluxdb:latest
 ```
 
-You can alternatively use the provided [docker-compose.yml](docker-compose.yml):
+You can alternatively use the provided [docker-compose.yml](https://github.com/bb-Ricardo/fritzinfluxdb/blob/main/docker-compose.yml):
 ```
 docker-compose up -d
 ```
@@ -180,31 +189,13 @@ link describes how to set env vars on a `docker run`
 
 For InfluxDB 2 it is highly recommended creating a specific write only token for the defined bucket.
 
-### Setup InfluxDB 2 datasource in Grafana for fritzinfluxdb
-
-The Grafana Dashboard is build using the InfluxQL query language. Therefore, the definition of the InfluxDB datasource
-in Grafana needs to be adopted.
-
-As "Query Language" define: InfluxQL<br>
-Set the http url to your InfluxDB instance
-
-Now "Add header":<br>
-* Header: Authorization
-* Value: Token {API_TOKEN}
-
-Here substitute `{API_TOKEN}` with your read token for the InfluxDB 2 bucket.
-
-The last option would be the database which is the same as the bucket defined in your config.
-
-See this comment for details: https://github.com/karrot-dev/fritzinfluxdb/issues/18#issuecomment-1073066993
-
 ## Running the script
 ```
 usage: fritzinfluxdb.py [-h] [-c fritzinfluxdb.ini [fritzinfluxdb.ini ...]] [-d] [-v]
 
 fritzinfluxdb
-Version: 1.0.0 (2022-06-11)
-Project URL: https://github.com/karrot-dev/fritzinfluxdb
+Version: 1.1.0 (2022-11-02)
+Project URL: https://github.com/bb-Ricardo/fritzinfluxdb
 
 optional arguments:
   -h, --help            show this help message and exit
@@ -216,22 +207,44 @@ optional arguments:
 
 ## Grafana
 
-There are following Dashboards included:
-* [fritzbox_system_dashboard.json](grafana/fritzbox_system_dashboard.json)
-* [fritzbox_logs_dashboard.json](grafana/fritzbox_logs_dashboard.json)
+Dashboards to display the collected data are included under [grafana](https://github.com/bb-Ricardo/fritzinfluxdb/blob/main/grafana).
+Due to some limitations of the InfluxDB 1.8 Flux language implementation the dashboards had to bes separated.
 
-*This was heavily inspired from: https://grafana.com/dashboards/713*
+Influx data source configuration:
+
+InfluxDB 1.8:
+  * the "Query Language" `InfluxQL` has to be selected
+  * DEPRECATED: these dashboards will not be developed/extended any further
+
+InfluxDB >=2.2.0:
+  * the "Query Language" `Flux` has to be selected
+  * the bucket with the fritzbox data has to be set as default bucket (all dashboards use the default bucket)
+
+### Dashboards
+There are following Dashboards included:
+
+InfluxDB 1.8.X (deprecated):
+* [fritzbox_system_dashboard.json](https://github.com/bb-Ricardo/fritzinfluxdb/blob/main/grafana/influx1_dashboards/fritzbox_system_dashboard.json)
+* [fritzbox_logs_dashboard.json](https://github.com/bb-Ricardo/fritzinfluxdb/blob/main/grafana/influx1_dashboards/fritzbox_logs_dashboard.json)
+* [fritzbox_call_log_dashboard.json](https://github.com/bb-Ricardo/fritzinfluxdb/blob/main/grafana/influx1_dashboards/fritzbox_call_log_dashboard.json)
+
+InfluxDB >=2.2.0:
+* [fritzbox_system_dashboard.json](https://github.com/bb-Ricardo/fritzinfluxdb/blob/main/grafana/influx2_dashboards/fritzbox_system_dashboard.json)
+* [fritzbox_logs_dashboard.json](https://github.com/bb-Ricardo/fritzinfluxdb/blob/main/grafana/influx2_dashboards/fritzbox_logs_dashboard.json)
+* [fritzbox_call_log_dashboard.json](https://github.com/bb-Ricardo/fritzinfluxdb/blob/main/grafana/influx2_dashboards/fritzbox_call_log_dashboard.json)
+* [fritzbox_home_automation_dashboard.json](https://github.com/bb-Ricardo/fritzinfluxdb/blob/main/grafana/influx2_dashboards/fritzbox_home_automation_dashboard.json)
+
+*This was heavily inspired by: https://grafana.com/dashboards/713*
 
 ## Configure more attributes
 
 check here to find an overview of more attributes which probably could be added
 https://wiki.fhem.de/w/index.php?title=FRITZBOX
 
-New TR-069 services can be defined in [fritzinfluxdb/classes/fritzbox/services_tr069.py](fritzinfluxdb/classes/fritzbox/services_tr069.py)<br>
-New LUA services can be defined in [fritzinfluxdb/classes/fritzbox/services_lua.py](fritzinfluxdb/classes/fritzbox/services_lua.py)
+New services can be defined in [fritzinfluxdb/classes/fritzbox/service_definitions](https://github.com/bb-Ricardo/fritzinfluxdb/blob/main/fritzinfluxdb/classes/fritzbox/service_definitions)
 
 # License
->You can check out the full license [here](LICENSE.txt)
+>You can check out the full license [here](https://github.com/bb-Ricardo/fritzinfluxdb/blob/main/LICENSE.txt)
 
 This project is licensed under the terms of the **MIT** license.
 

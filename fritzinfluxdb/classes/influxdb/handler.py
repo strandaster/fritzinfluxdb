@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+#  Copyright (c) 2022 - 2022 Ricardo Bartels. All rights reserved.
 #
 #  fritzinfluxdb.py
 #
@@ -10,11 +11,13 @@ import asyncio
 import pytz
 from datetime import datetime
 from http.client import HTTPConnection
+from logging import LogRecord
 
 import requests
 
 # InfluxDB version 1.x client
 from influxdb import InfluxDBClient as InfluxDBClientV1
+from influxdb.exceptions import InfluxDBClientError
 # InfluxDB version 2.x client
 from influxdb_client import InfluxDBClient as InfluxDBClientV2, BucketRetentionRules, DBRPCreate, DBRPsService
 from influxdb_client.rest import ApiException
@@ -24,6 +27,8 @@ from influxdb_client.domain.write_precision import WritePrecision
 from fritzinfluxdb.classes.influxdb.config import InfluxDBConfig
 from fritzinfluxdb.log import get_logger
 from fritzinfluxdb.classes.common import FritzMeasurement
+
+from fritzinfluxdb.classes.fritzbox.config import FritzBoxConfig
 
 log = get_logger()
 
@@ -40,9 +45,6 @@ class InfluxHandler:
     # default InfluxDB connection timeout
     connection_timeout_v1 = 2
     connection_timeout_v2 = 5
-
-    # default number of days to keep our fritzinfluxdb data in InfluxDB
-    bucket_retention_days = 365
 
     # max size of message buffer before discarding old measurements
     max_measurements_buffer_size = 1_000_000
@@ -66,6 +68,9 @@ class InfluxHandler:
     # set to true if connection to InfluxDB got lost
     connection_lost = False
 
+    # keep track if InfluxDB refuses to write data which is out of range
+    out_of_retention_period_range = False
+
     def __init__(self, config, user_agent=None):
 
         self.config = InfluxDBConfig(config)
@@ -78,6 +83,7 @@ class InfluxHandler:
         self.last_write_retry = None
         self.session_v1_requests_session = requests.Session()
         self.current_max_measurements_buffer_warning = self.max_measurements_buffer_warning
+        self.current_measurements_per_write = self.max_measurements_per_write
 
         if self.config.version == 1:
 
@@ -196,6 +202,21 @@ class InfluxHandler:
         else:
             log.debug(f"InfluxDB database '{self.config.database}' exists")
 
+        retention_policies = list()
+        try:
+            retention_policies = self.session_v1.get_list_retention_policies(self.config.database)
+        except Exception as e:
+            log.warning(f"Problem querying database retention policy: {e}")
+
+        if "1year" not in [x.get("name") for x in retention_policies]:
+            try:
+                self.session_v1.create_retention_policy(
+                    name="1year", duration=f"{self.config.data_retention_days}d", replication="1",
+                    database=self.config.database, shard_duration="24h", default=True
+                )
+            except Exception as e:
+                log.warning(f"Problem creating database retention policy: {e}")
+
         log.info(f"Connection to InfluxDB {self.version} established and database present")
 
         self.init_successful = True
@@ -236,7 +257,7 @@ class InfluxHandler:
             log.info(f"InfluxDB bucket '{self.config.bucket}' not found, trying to create it")
             try:
                 retention_rules = BucketRetentionRules(type="expire",
-                                                       every_seconds=3600 * 24 * self.bucket_retention_days,
+                                                       every_seconds=3600 * 24 * self.config.data_retention_days,
                                                        shard_group_duration_seconds=3600 * 24)
 
                 bucket_data = buckets_api.create_bucket(bucket_name=self.config.bucket,
@@ -259,16 +280,24 @@ class InfluxHandler:
                 log.error(f"Problem requesting InfluxDB DBRP data: {e}")
                 return
 
-            if len(bucket_dbrp_data.content) > 0:
-                log.debug(f"InfluxDB bucket '{self.config.bucket}' has a database mapping: "
-                          f"{bucket_dbrp_data.content[0].database}")
+            create_retention_policy = False
+            if "1year" not in [x.retention_policy for x in bucket_dbrp_data.content]:
+                create_retention_policy = True
+
+            if len(bucket_dbrp_data.content) == 0:
+                create_retention_policy = True
+
+            if create_retention_policy is False:
+                log.debug(f"InfluxDB bucket '{self.config.bucket}' has a database mapping retention policy: "
+                          f"{bucket_dbrp_data.content[0].retention_policy}")
             else:
                 try:
                     dbrp_api.post_dbrp(DBRPCreate(
                         org=self.config.organisation,
                         bucket_id=bucket_data.id,
                         database=bucket_data.name,
-                        retention_policy="1year"
+                        retention_policy="1year",
+                        default=True
                     ))
                 except Exception as e:
                     log.error(f"Problem creating InfluxDB DBRP data: {e}")
@@ -318,8 +347,15 @@ class InfluxHandler:
             log.debug("InfluxDB data queue: No measurements found in queue")
             return
 
+        if self.out_of_retention_period_range is True:
+
+            # sort measurements to write out all the newest measurements first
+            # which probably won't hit the retention period boundary
+            self.buffer = sorted(self.buffer, key=lambda m: m.timestamp, reverse=True)
+
         # only use max amount of measurements to send to InfluxDB
-        local_buffer = self.buffer[0:self.max_measurements_per_write]
+        log.debug(f"Trying to write a maximum of '{self.current_measurements_per_write}' measurements to InfluxDB")
+        local_buffer = self.buffer[0:self.current_measurements_per_write]
 
         # convert FritzMeasurement to list of dicts
         data = [self.convert_measurement(x) for x in local_buffer]
@@ -328,15 +364,41 @@ class InfluxHandler:
         self.last_write_retry = datetime.now(pytz.utc)
         try:
             if self.config.version == 1:
-                write_successful = self.session_v1.write_points(data, time_precision=WritePrecision.S)
+                write_successful = self.session_v1.write_points(data, time_precision="u")
             elif self.config.version == 2:
                 self.session_v2_write_api.write(bucket=self.config.bucket, record=data,
-                                                write_precision=WritePrecision.S)
+                                                write_precision=WritePrecision.US)
                 write_successful = True
+        except (ApiException, InfluxDBClientError) as e:
+
+            if (isinstance(e, ApiException) and e.status == 422) or \
+                    (isinstance(e, InfluxDBClientError) and "points beyond retention policy" in f"{e}"):
+
+                log.debug("InfluxDB refused to write data as there seems to be measurements "
+                          "which are older then the defined retention period")
+
+                self.out_of_retention_period_range = True
+                self.current_retry_interval = 0
+
+                # get timestamp of measurement which is just out of range
+                if self.current_measurements_per_write <= 1 and len(self.buffer) > 0:
+                    newest_measurement = self.buffer[0]
+                    num_purged = len([x for x in self.buffer if x.timestamp <= newest_measurement.timestamp])
+                    log.info(f"Purging '{num_purged}' measurements which are older ({newest_measurement.timestamp}) "
+                             f"then the InfluxDB configured retention period")
+                    self.buffer[:] = [x for x in self.buffer if x.timestamp > newest_measurement.timestamp]
+                else:
+                    self.set_num_current_measurements_to_write(int(self.current_measurements_per_write/2))
+            else:
+                log.error(f"Failed to write to InfluxDB '{self.config.hostname}': {e}")
+
         except Exception as e:
             self.connection_lost = True
             log.error(f"Failed to write to InfluxDB '{self.config.hostname}': {e}")
-            pass
+
+        if len(self.buffer) == 0:
+            self.out_of_retention_period_range = False
+            self.current_measurements_per_write = self.max_measurements_per_write
 
         if write_successful is True:
             if self.connection_lost is True:
@@ -350,9 +412,24 @@ class InfluxHandler:
             self.last_write_retry = None
             self.current_retry_interval = self.retry_interval
 
+            self.out_of_retention_period_range = False
+            self.set_num_current_measurements_to_write(self.current_measurements_per_write * 2)
+
         else:
             if self.connection_lost is True:
                 self.current_retry_interval *= 2
+
+    def set_num_current_measurements_to_write(self, num_measurements: int):
+
+        if not isinstance(num_measurements, int):
+            return
+
+        if num_measurements < 1:
+            self.current_measurements_per_write = 1
+        elif num_measurements >= self.max_measurements_per_write:
+            self.current_measurements_per_write = self.max_measurements_per_write
+        else:
+            self.current_measurements_per_write = num_measurements
 
     async def check_buffer(self):
 
@@ -391,6 +468,121 @@ class InfluxHandler:
             await self.check_buffer()
 
             log.debug(f"Current InfluxDB measurement buffer length: {len(self.buffer)}")
+            if self.out_of_retention_period_range is False:
+                await asyncio.sleep(1)
+
+
+class InfluxLogAndConfigWriter:
+
+    name = "InfluxLogAndConfigWriter"
+
+    config = None
+
+    # InfluxDB measurement name
+    log_measurement_name = "log_entry"
+
+    # log type of records for fritzinfluxdb instances
+    log_record_type = "FritzInfluxDB"
+
+    # measurement name of timezone setting record
+    timezone_measurement_name = "fritzinfluxdb_setting_timezone"
+
+    # The log queue to read the log records from
+    log_queue = None
+
+    # interval in which to write the timezone setting to InfluxDB
+    timezone_setting_write_interval = 60 * 60 * 12  # every twelve hours
+
+    # keep track if this instance was initiated successfully
+    init_successful = False
+
+    def __init__(self, config: FritzBoxConfig, log_queue: asyncio.Queue):
+        """
+        Handler to read log records from 'log_queue', format them to InfluxDB measurements
+        and writers them to the output queue.
+        Also writes the config option "timezone" to InfluxDB.
+
+        Parameters
+        ----------
+        config: FritzBoxConfig
+            the current FritzBoxConfig
+        log_queue: asyncio.Queue
+            queue object to read logs from which should be sent to InfluxDB
+
+        Returns
+        -------
+        handler to use for formatting log entries and write timezone config to InfluxDB
+        """
+
+        if not isinstance(config, FritzBoxConfig):
+            raise ValueError("param 'config' needs to be a 'FritzBoxConfig' object")
+
+        if not isinstance(log_queue, asyncio.Queue):
+            raise ValueError("param 'log_queue' needs to be a 'asyncio.Queue' object")
+
+        self.config = config
+        self.log_queue = log_queue
+
+        self.last_timezone_setting_write = None
+
+        self.init_successful = True
+
+    def format_log_record(self, log_record):
+
+        if not isinstance(log_record, LogRecord):
+            return None
+
+        log_timestamp = pytz.timezone("UTC").localize(datetime.utcfromtimestamp(log_record.created))
+
+        log_msg = "{levelname}: {message}".format(**log_record.__dict__)
+
+        return FritzMeasurement(self.log_measurement_name, log_msg,
+                                box_tag=self.config.box_tag,
+                                additional_tags={
+                                    "log_type": self.log_record_type
+                                },
+                                data_type=str,
+                                timestamp=log_timestamp,
+                                timestamp_precision=WritePrecision.US)
+
+    def get_timezone_setting_measurement(self):
+
+        return FritzMeasurement(self.timezone_measurement_name, self.config.timezone,
+                                box_tag=self.config.box_tag,
+                                data_type=str)
+
+    def is_time_to_write_timezone_setting(self):
+
+        if self.last_timezone_setting_write is None:
+            return True
+
+        if (datetime.now(pytz.utc) - self.last_timezone_setting_write).total_seconds() >= \
+                self.timezone_setting_write_interval:
+            return True
+
+        return False
+
+    async def task_loop(self, output_queue: asyncio.Queue):
+
+        while True:
+
+            while self.log_queue.empty() is False:
+                formatted_log_record = self.format_log_record(await self.log_queue.get())
+
+                if formatted_log_record is None:
+                    continue
+
+                log.debug(formatted_log_record)
+
+                await output_queue.put(formatted_log_record)
+
+            # write timezone setting to influx queue
+            if self.is_time_to_write_timezone_setting():
+                timezone_measurement = self.get_timezone_setting_measurement()
+                log.debug(timezone_measurement)
+                await output_queue.put(timezone_measurement)
+                self.last_timezone_setting_write = datetime.now(pytz.utc)
+
             await asyncio.sleep(1)
 
 # EOF

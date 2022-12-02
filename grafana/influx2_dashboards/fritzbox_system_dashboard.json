@@ -14,16 +14,9 @@
       "label": "InfluxDB measurement",
       "value": "fritzbox",
       "description": ""
-    },
-    {
-      "name": "VAR_TIMEZONE",
-      "type": "constant",
-      "label": "specify your timezone",
-      "value": "Europe/Berlin",
-      "description": ""
     }
   ],
-  "__elements": [],
+  "__elements": {},
   "__requires": [
     {
       "type": "panel",
@@ -41,7 +34,7 @@
       "type": "grafana",
       "id": "grafana",
       "name": "Grafana",
-      "version": "8.4.4"
+      "version": "9.2.2"
     },
     {
       "type": "datasource",
@@ -78,17 +71,18 @@
     "list": [
       {
         "builtIn": 1,
-        "datasource": "${DS_INFLUXDB}",
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${DS_INFLUXDB}"
+        },
         "enable": true,
         "hide": false,
         "iconColor": "rgba(0, 211, 255, 1)",
+        "mappings": {},
         "name": "Log annotations",
-        "query": "SELECT \"log_entry\" FROM /^$measurement$/ WHERE (\"box\" =~ /^$boxtag$/ AND \"log_type\" = 'Internet connection') AND $timeFilter ORDER BY time DESC",
         "target": {
-          "limit": 100,
-          "matchAny": false,
-          "tags": [],
-          "type": "dashboard"
+          "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop:v.timeRangeStop)\n  |> filter(fn: (r) => r._field == \"log_entry\" and r.box == \"$boxtag\" and r.log_type == \"Internet connection\" )\n  |> sort(columns: [\"_time\"], desc: true)\n  |> group(columns: [\"_measurement\"])\n  |> keep(columns:[\"_time\", \"_value\", \"log_type\"])",
+          "refId": "annotation_query"
         },
         "type": "dashboard"
       }
@@ -100,12 +94,15 @@
   "gnetId": 713,
   "graphTooltip": 2,
   "id": null,
-  "iteration": 1655320107368,
   "links": [],
   "liveNow": false,
   "panels": [
     {
       "collapsed": false,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "000000002"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -128,6 +125,8 @@
             "mode": "palette-classic"
           },
           "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
             "axisLabel": "DSL Speed",
             "axisPlacement": "left",
             "barAlignment": 0,
@@ -268,6 +267,36 @@
                 }
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "UP"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "DOWN"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "yellow",
+                  "mode": "fixed"
+                }
+              }
+            ]
           }
         ]
       },
@@ -282,7 +311,8 @@
         "legend": {
           "calcs": [],
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
           "mode": "multi",
@@ -309,9 +339,11 @@
               "type": "fill"
             }
           ],
+          "hide": false,
           "measurement": "/^$measurement$/",
           "orderByTime": "ASC",
           "policy": "default",
+          "query": "finalMap = (tables=<-) => tables\n  |> map(fn: (r) =>  ({\n        r with _value:\n          if r._field =~ /.*rate$/ then r._value * 8.0\n          else if r._field =~ /.*dsl_sync_max$/ then r._value * 1000.0\n          else r._value,\n        _field:\n          if r._field == \"sendrate\" then \"UP\"\n          else if r._field == \"receiverate\" then \"DOWN\"\n          else if r._field == \"downstreammax\" then \"DOWN netto Max\"\n          else if r._field == \"downstreamphysicalmax\" then \"DOWN Physical Max\"\n          else if r._field == \"downstream_dsl_sync_max\" then \"DOWN DSL Sync\"\n          else if r._field == \"upstreammax\" then \"UP netto Max\"\n          else if r._field == \"upstreamphysicalmax\" then \"UP Physical Max\"\n          else if r._field == \"upstream_dsl_sync_max\" then \"UP DSL Sync\"\n          else r._field\n        })\n      )\n\nfrom(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"${measurement}\" and r.box == \"${boxtag}\" and\n    (\n        r._field == \"sendrate\" or\n        r._field == \"receiverate\" or\n        r._field == \"downstreammax\" or\n        r._field == \"downstream_dsl_sync_max\" or\n        r._field == \"downstreamphysicalmax\" or\n        r._field == \"upstreammax\" or\n        r._field == \"upstream_dsl_sync_max\" or\n        r._field == \"upstreamphysicalmax\"\n    )\n  )\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\"])\n  |> sort(columns: [\"_time\"], desc: false)\n  |> finalMap()\n",
           "refId": "A",
           "resultFormat": "time_series",
           "select": [
@@ -563,18 +595,19 @@
               "value": "/^$boxtag$/"
             }
           ]
+        },
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${DS_INFLUXDB}"
+          },
+          "hide": false,
+          "query": "finalMap = (tables=<-) => tables\n  |> map(fn: (r) =>  ({\n        r with _field:\n          if r._field == \"crc_errors\" then \"CRC Errors\"\n          else if r._field == \"errored_seconds\" then \"Errored Seconds\"\n          else if r._field == \"severely_errored_seconds\" then \"Severely Errored Seconds\"\n          else r._field\n        })\n      )\n\nfrom(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"$boxtag\" and \n    (\n        r._field == \"crc_errors\" or\n        r._field == \"errored_seconds\" or\n        r._field == \"severely_errored_seconds\"\n    )\n  )\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> derivative(unit: v.windowPeriod, nonNegative: true, columns: [\"_value\"], timeColumn: \"_time\")\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\"])\n  |> sort(columns: [\"_time\"], desc: false)\n  |> finalMap()",
+          "refId": "B"
         }
       ],
       "title": "Current UP/DOWN",
-      "transformations": [
-        {
-          "id": "renameByRegex",
-          "options": {
-            "regex": "fritzbox.(.*)",
-            "renamePattern": "$1"
-          }
-        }
-      ],
+      "transformations": [],
       "type": "timeseries"
     },
     {
@@ -611,7 +644,7 @@
           "measurement": "/^$measurement$/",
           "orderByTime": "DESC",
           "policy": "default",
-          "query": "SELECT \"log_entry\" FROM /^$measurement$/ WHERE (\"box\" =~ /^$boxtag$/ AND \"log_type\" = 'Internet connection') AND $timeFilter GROUP BY \"log_type\"",
+          "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field == \"log_entry\" and r.log_type != \"FritzInfluxDB\")\n  |> sort(columns: [\"_time\"], desc: true)\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\", \"log_type\"])\n  |> limit(n:5, offset: 0)\n",
           "rawQuery": false,
           "refId": "A",
           "resultFormat": "time_series",
@@ -653,12 +686,12 @@
           "mappings": [
             {
               "options": {
-                "0": {
+                "false": {
                   "color": "dark-blue",
                   "index": 2,
                   "text": "No"
                 },
-                "1": {
+                "true": {
                   "color": "dark-green",
                   "index": 1,
                   "text": "Yes"
@@ -709,12 +742,12 @@
           "calcs": [
             "lastNotNull"
           ],
-          "fields": "/^fritzbox\\.last$/",
+          "fields": "/^_value$/",
           "values": false
         },
         "textMode": "value"
       },
-      "pluginVersion": "8.4.4",
+      "pluginVersion": "9.2.2",
       "targets": [
         {
           "datasource": {
@@ -733,7 +766,7 @@
           "measurement": "/^$measurement$/",
           "orderByTime": "ASC",
           "policy": "default",
-          "query": "SELECT last(\"upgrade_available\") FROM /^$measurement$/ WHERE (\"box\" =~ /^$boxtag$/)",
+          "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"${measurement}\" and r[\"_field\"] == \"upgrade_available\" and r.box == \"${boxtag}\")\n  |> last()\n  |> keep(columns: [\"_value\"])",
           "rawQuery": false,
           "refId": "A",
           "resultFormat": "time_series",
@@ -756,20 +789,7 @@
         }
       ],
       "title": "Update",
-      "transformations": [
-        {
-          "id": "convertFieldType",
-          "options": {
-            "conversions": [
-              {
-                "destinationType": "number",
-                "targetField": "fritzbox.last"
-              }
-            ],
-            "fields": {}
-          }
-        }
-      ],
+      "transformations": [],
       "type": "stat"
     },
     {
@@ -850,7 +870,7 @@
         },
         "textMode": "auto"
       },
-      "pluginVersion": "8.4.4",
+      "pluginVersion": "9.2.2",
       "targets": [
         {
           "datasource": {
@@ -862,7 +882,7 @@
           "measurement": "/^$measurement$/",
           "orderByTime": "ASC",
           "policy": "default",
-          "query": "SELECT \"linkuptime\" FROM /^$measurement$/ WHERE (\"box\" =~ /^$boxtag$/)",
+          "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"${measurement}\" and r[\"_field\"] == \"linkuptime\" and r.box == \"${boxtag}\")\n  |> last()\n  |> keep(columns: [\"_value\"])",
           "rawQuery": false,
           "refId": "A",
           "resultFormat": "time_series",
@@ -945,13 +965,13 @@
           "calcs": [
             "lastNotNull"
           ],
-          "fields": "/.*\\.current$/",
+          "fields": "/^receiverate$/",
           "values": false
         },
         "showThresholdLabels": false,
         "showThresholdMarkers": false
       },
-      "pluginVersion": "8.4.4",
+      "pluginVersion": "9.2.2",
       "targets": [
         {
           "datasource": {
@@ -970,7 +990,7 @@
           "measurement": "/^$measurement$/",
           "orderByTime": "ASC",
           "policy": "default",
-          "query": "SELECT last(\"receiverate\")*8 AS \"current\", last(\"downstreammax\") AS \"max\" FROM /^$measurement$/ WHERE (\"box\" =~ /^$boxtag$/)",
+          "query": "from(bucket: v.defaultBucket)\n  |> range(start: -5m)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"${measurement}\" and r.box == \"${boxtag}\" and\n    (\n        r._field == \"receiverate\" or\n        r._field == \"downstreammax\"\n    )\n  )\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\"])\n  |> last()\n  |> map(fn: (r) =>  ({\n    r with _value:\n      if r._field == \"receiverate\" then r._value * 8\n      else r._value,\n    })\n  )\n",
           "rawQuery": false,
           "refId": "A",
           "resultFormat": "time_series",
@@ -1076,13 +1096,13 @@
           "calcs": [
             "lastNotNull"
           ],
-          "fields": "/.*\\.current$/",
+          "fields": "/^sendrate$/",
           "values": false
         },
         "showThresholdLabels": false,
         "showThresholdMarkers": false
       },
-      "pluginVersion": "8.4.4",
+      "pluginVersion": "9.2.2",
       "targets": [
         {
           "datasource": {
@@ -1094,7 +1114,7 @@
           "measurement": "/^$measurement$/",
           "orderByTime": "ASC",
           "policy": "default",
-          "query": "SELECT last(\"sendrate\")*8 AS \"current\", last(\"upstreammax\") AS \"max\" FROM /^$measurement$/ WHERE (\"box\" =~ /^$boxtag$/)",
+          "query": "from(bucket: v.defaultBucket)\n  |> range(start: -5m)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"${measurement}\" and r.box == \"${boxtag}\" and\n    (\n        r._field == \"sendrate\" or\n        r._field == \"upstreammax\"\n    )\n  )\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\"])\n  |> last()\n  |> map(fn: (r) =>  ({\n    r with _value:\n      if r._field == \"sendrate\" then r._value * 8\n      else r._value,\n    })\n  )\n",
           "rawQuery": false,
           "refId": "A",
           "resultFormat": "time_series",
@@ -1213,7 +1233,7 @@
         },
         "textMode": "auto"
       },
-      "pluginVersion": "8.4.4",
+      "pluginVersion": "9.2.2",
       "targets": [
         {
           "datasource": {
@@ -1237,6 +1257,7 @@
           "measurement": "/^$measurement$/",
           "orderByTime": "ASC",
           "policy": "default",
+          "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"${measurement}\" and r[\"_field\"] == \"cpu_temp\" and r.box == \"${boxtag}\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_value\"])",
           "refId": "A",
           "resultFormat": "time_series",
           "select": [
@@ -1277,6 +1298,7 @@
           },
           "mappings": [],
           "max": 100,
+          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -1317,7 +1339,7 @@
         "showThresholdLabels": false,
         "showThresholdMarkers": true
       },
-      "pluginVersion": "8.4.4",
+      "pluginVersion": "9.2.2",
       "targets": [
         {
           "datasource": {
@@ -1341,6 +1363,7 @@
           "measurement": "/^$measurement$/",
           "orderByTime": "ASC",
           "policy": "default",
+          "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field == \"cpu_utilization\" )\n  |> last()\n  |> keep(columns: [\"_value\"])",
           "refId": "A",
           "resultFormat": "time_series",
           "select": [
@@ -1416,7 +1439,7 @@
         "orientation": "auto",
         "reduceOptions": {
           "calcs": [
-            "lastNotNull"
+            "sum"
           ],
           "fields": "",
           "values": false
@@ -1424,7 +1447,7 @@
         "showThresholdLabels": false,
         "showThresholdMarkers": true
       },
-      "pluginVersion": "8.4.4",
+      "pluginVersion": "9.2.2",
       "targets": [
         {
           "datasource": {
@@ -1448,7 +1471,7 @@
           "measurement": "/^$measurement$/",
           "orderByTime": "ASC",
           "policy": "default",
-          "query": "SELECT last(\"ram_usage_fixed\") + last(\"ram_usage_dynamic\") FROM /^$measurement$/ WHERE (\"box\" =~ /^$boxtag$/) AND $timeFilter GROUP BY time($__interval) fill(linear)",
+          "query": "// SELECT last(\"ram_usage_fixed\") + last(\"ram_usage_dynamic\") FROM /^$measurement$/ WHERE (\"box\" =~ /^$boxtag$/) AND $timeFilter GROUP BY time($__interval) fill(linear)\nfrom(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"${measurement}\" and r.box == \"${boxtag}\" and\n    (\n      r._field == \"ram_usage_fixed\" or r._field == \"ram_usage_dynamic\"\n    )\n  )\n  |> last()\n  |> keep(columns: [\"_value\"])",
           "rawQuery": true,
           "refId": "A",
           "resultFormat": "time_series",
@@ -1505,12 +1528,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "semi-dark-red",
                 "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
               }
             ]
           },
@@ -1542,7 +1561,7 @@
         },
         "textMode": "auto"
       },
-      "pluginVersion": "8.4.4",
+      "pluginVersion": "9.2.2",
       "targets": [
         {
           "datasource": {
@@ -1567,7 +1586,7 @@
           "measurement": "fritzbox_value",
           "orderByTime": "ASC",
           "policy": "default",
-          "query": "SELECT cumulative_sum(non_negative_difference(last(\"totalbytessent\"))) FROM /^$measurement$/  WHERE (\"box\" =~ /^$boxtag$/) AND $timeFilter  GROUP BY time($__interval) tz(${timezone:singlequote})",
+          "query": "import \"timezone\"\noption location = timezone.location(name: \"${timezone}\")\nfrom(bucket: v.defaultBucket)\n  |> range(start: -1d)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field == \"totalbytessent\" )\n  |> difference(nonNegative: true, columns: [\"_value\"])\n  |> cumulativeSum(columns: [\"_value\"])\n  |> aggregateWindow(every: 15m, fn: last, createEmpty: false)\n",
           "rawQuery": true,
           "refId": "A",
           "resultFormat": "time_series",
@@ -1663,7 +1682,7 @@
         },
         "textMode": "auto"
       },
-      "pluginVersion": "8.4.4",
+      "pluginVersion": "9.2.2",
       "targets": [
         {
           "datasource": {
@@ -1688,7 +1707,7 @@
           "measurement": "fritzbox_value",
           "orderByTime": "ASC",
           "policy": "default",
-          "query": "SELECT cumulative_sum(non_negative_difference(last(\"totalbytesreceived\"))) FROM /^$measurement$/ WHERE (\"box\" =~ /^$boxtag$/) AND  $timeFilter GROUP BY time($__interval) tz(${timezone:singlequote})",
+          "query": "import \"timezone\"\noption location = timezone.location(name: \"${timezone}\")\nfrom(bucket: v.defaultBucket)\n  |> range(start: -1d)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field == \"totalbytesreceived\" )\n  |> difference(nonNegative: true, columns: [\"_value\"])\n  |> cumulativeSum(columns: [\"_value\"])\n  |> aggregateWindow(every: 15m, fn: last, createEmpty: false)\n",
           "rawQuery": true,
           "refId": "A",
           "resultFormat": "time_series",
@@ -1765,7 +1784,7 @@
         },
         "textMode": "auto"
       },
-      "pluginVersion": "8.4.4",
+      "pluginVersion": "9.2.2",
       "targets": [
         {
           "alias": "$tag_name",
@@ -1790,7 +1809,7 @@
           "measurement": "/^$measurement$/",
           "orderByTime": "ASC",
           "policy": "default",
-          "query": "SELECT last(\"active_host\"::field), \"port\"::tag, \"ipv4_last_used\"::tag::integer  FROM /^$measurement$/ WHERE (\"box\" =~ /^$boxtag$/) AND $timeFilter GROUP BY time($interval), \"name\", \"mac\", \"port\"",
+          "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"${measurement}\" and r[\"_field\"] == \"num_active_host\" and r.box == \"${boxtag}\")\n  |> last()\n  |> keep(columns: [\"_value\"])",
           "rawQuery": false,
           "refId": "A",
           "resultFormat": "table",
@@ -1898,7 +1917,7 @@
         },
         "textMode": "auto"
       },
-      "pluginVersion": "8.4.4",
+      "pluginVersion": "9.2.2",
       "targets": [
         {
           "datasource": {
@@ -1910,7 +1929,7 @@
           "measurement": "/^$measurement$/",
           "orderByTime": "ASC",
           "policy": "default",
-          "query": "SELECT last(\"systemuptime\") FROM /^$measurement$/ WHERE (\"box\" =~ /^$boxtag$/)",
+          "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"${measurement}\" and r[\"_field\"] == \"systemuptime\" and r.box == \"${boxtag}\")\n  |> last()\n  |> keep(columns: [\"_value\"])",
           "rawQuery": false,
           "refId": "A",
           "resultFormat": "time_series",
@@ -1944,6 +1963,10 @@
     },
     {
       "collapsed": true,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "000000002"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -1963,6 +1986,8 @@
                 "mode": "palette-classic"
               },
               "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
                 "axisLabel": "",
                 "axisPlacement": "auto",
                 "barAlignment": 0,
@@ -1997,7 +2022,8 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green"
+                    "color": "green",
+                    "value": null
                   }
                 ]
               },
@@ -2007,7 +2033,7 @@
               {
                 "matcher": {
                   "id": "byName",
-                  "options": "Download"
+                  "options": "totalbytesreceived"
                 },
                 "properties": [
                   {
@@ -2016,13 +2042,17 @@
                       "fixedColor": "#1f78c1",
                       "mode": "fixed"
                     }
+                  },
+                  {
+                    "id": "displayName",
+                    "value": "Download"
                   }
                 ]
               },
               {
                 "matcher": {
                   "id": "byName",
-                  "options": "Upload"
+                  "options": "totalbytessent"
                 },
                 "properties": [
                   {
@@ -2031,6 +2061,10 @@
                       "fixedColor": "#e24d42",
                       "mode": "fixed"
                     }
+                  },
+                  {
+                    "id": "displayName",
+                    "value": "Upload"
                   }
                 ]
               }
@@ -2049,7 +2083,8 @@
             "legend": {
               "calcs": [],
               "displayMode": "list",
-              "placement": "bottom"
+              "placement": "bottom",
+              "showLegend": true
             },
             "tooltip": {
               "mode": "multi",
@@ -2059,108 +2094,13 @@
           "pluginVersion": "8.4.4",
           "targets": [
             {
-              "alias": "Download",
               "datasource": {
                 "type": "influxdb",
                 "uid": "${DS_INFLUXDB}"
               },
-              "dsType": "influxdb",
-              "groupBy": [
-                {
-                  "params": [
-                    "24h"
-                  ],
-                  "type": "time"
-                }
-              ],
               "hide": false,
-              "measurement": "fritzbox_value",
-              "orderByTime": "ASC",
-              "policy": "default",
-              "query": "SELECT non_negative_difference(last(cumulative_sum)) FROM (\nSELECT cumulative_sum(non_negative_difference(last(\"totalbytesreceived\"))) FROM /^$measurement$/ WHERE  (\"box\" =~ /^$boxtag$/) AND $timeFilter GROUP BY time($__interval)\n) WHERE $timeFilter GROUP BY time(1d) tz(${timezone:singlequote})",
-              "rawQuery": true,
-              "refId": "F",
-              "resultFormat": "time_series",
-              "select": [
-                [
-                  {
-                    "params": [
-                      "value"
-                    ],
-                    "type": "field"
-                  },
-                  {
-                    "params": [],
-                    "type": "max"
-                  },
-                  {
-                    "params": [
-                      "10s"
-                    ],
-                    "type": "non_negative_derivative"
-                  }
-                ]
-              ],
-              "tags": [
-                {
-                  "key": "type_instance",
-                  "operator": "=",
-                  "value": "totalbytesreceived"
-                }
-              ],
-              "target": ""
-            },
-            {
-              "alias": "Upload",
-              "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
-              },
-              "dsType": "influxdb",
-              "groupBy": [
-                {
-                  "params": [
-                    "24h"
-                  ],
-                  "type": "time"
-                }
-              ],
-              "hide": false,
-              "measurement": "fritzbox_value",
-              "orderByTime": "ASC",
-              "policy": "default",
-              "query": "SELECT non_negative_difference(last(cumulative_sum)) FROM (\nSELECT cumulative_sum(non_negative_difference(last(totalbytessent))) FROM /^$measurement$/ WHERE  (\"box\" =~ /^$boxtag$/) AND $timeFilter GROUP BY time($__interval)\n) WHERE $timeFilter GROUP BY time(1d) tz(${timezone:singlequote})",
-              "rawQuery": true,
-              "refId": "A",
-              "resultFormat": "time_series",
-              "select": [
-                [
-                  {
-                    "params": [
-                      "value"
-                    ],
-                    "type": "field"
-                  },
-                  {
-                    "params": [],
-                    "type": "max"
-                  },
-                  {
-                    "params": [
-                      "10s"
-                    ],
-                    "type": "non_negative_derivative"
-                  }
-                ]
-              ],
-              "tags": [
-                {
-                  "key": "type_instance",
-                  "operator": "=",
-                  "value": "totalbytesreceived"
-                }
-              ],
-              "target": ""
+              "query": "import \"date\"\nimport \"timezone\"\noption location = timezone.location(name: \"${timezone}\")\nfrom(bucket: v.defaultBucket)\n  |> range(start: -7d, stop: date.add(d: 1d, to: date.truncate(t: now(), unit: 1d)))\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and \n    (\n      r._field == \"totalbytesreceived\" or\n      r._field == \"totalbytessent\"\n    )\n  )\n  |> difference(nonNegative: true, columns: [\"_value\"])\n  |> fill(column: \"_value\", usePrevious: true)\n  |> cumulativeSum(columns: [\"_value\"])\n  |> aggregateWindow(every: 1d, fn: last, createEmpty: false)\n  |> difference(nonNegative: true, columns: [\"_value\"])\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\"])\n  |> sort(columns: [\"_time\"], desc: false)\n  |> truncateTimeColumn(unit: 1h)\n  |> timeShift(duration: -1d, columns: [\"_time\"])\n\n",
+              "refId": "B"
             }
           ],
           "timeFrom": "7d",
@@ -2178,6 +2118,8 @@
                 "mode": "palette-classic"
               },
               "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
                 "axisLabel": "",
                 "axisPlacement": "auto",
                 "barAlignment": 0,
@@ -2212,7 +2154,8 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green"
+                    "color": "green",
+                    "value": null
                   },
                   {
                     "color": "red",
@@ -2226,7 +2169,7 @@
               {
                 "matcher": {
                   "id": "byName",
-                  "options": "Download"
+                  "options": "totalbytesreceived"
                 },
                 "properties": [
                   {
@@ -2235,13 +2178,17 @@
                       "fixedColor": "#1F78C1",
                       "mode": "fixed"
                     }
+                  },
+                  {
+                    "id": "displayName",
+                    "value": "Download"
                   }
                 ]
               },
               {
                 "matcher": {
                   "id": "byName",
-                  "options": "Upload"
+                  "options": "totalbytessent"
                 },
                 "properties": [
                   {
@@ -2250,6 +2197,10 @@
                       "fixedColor": "#EA6460",
                       "mode": "fixed"
                     }
+                  },
+                  {
+                    "id": "displayName",
+                    "value": "Upload"
                   }
                 ]
               }
@@ -2270,7 +2221,8 @@
                 "lastNotNull"
               ],
               "displayMode": "list",
-              "placement": "bottom"
+              "placement": "bottom",
+              "showLegend": true
             },
             "tooltip": {
               "mode": "multi",
@@ -2310,7 +2262,7 @@
               "measurement": "fritzbox_value",
               "orderByTime": "ASC",
               "policy": "default",
-              "query": "SELECT non_negative_difference(last(cumulative_sum)) FROM (\nSELECT cumulative_sum(non_negative_difference(last(\"totalbytesreceived\"))) FROM /^$measurement$/ WHERE  (\"box\" =~ /^$boxtag$/) AND $timeFilter GROUP BY time($__interval)\n) WHERE $timeFilter GROUP BY time($__interval) tz(${timezone:singlequote})",
+              "query": "import \"date\"\nfrom(bucket: v.defaultBucket)\n  |> range(start: -1d, stop: date.add(d: 1h, to: date.truncate(t: now(), unit: 1h)))\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and \n    (\n      r._field == \"totalbytesreceived\" or \n      r._field == \"totalbytessent\"\n    )\n  )\n  |> difference(nonNegative: true, columns: [\"_value\"])\n  |> cumulativeSum(columns: [\"_value\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> difference(nonNegative: true, columns: [\"_value\"])\n  |> drop(columns: [\"box\", \"_measurement\"])\n  |> truncateTimeColumn(unit: 1h)\n  |> timeShift(duration: -1h)",
               "rawQuery": true,
               "refId": "A",
               "resultFormat": "time_series",
@@ -2336,66 +2288,6 @@
                 }
               ],
               "target": "alias(summarize(nonNegativeDerivative(collectd.squirrel.fritzbox.bytes-totalbytesreceived, 0), '1h', 'sum'), 'download')"
-            },
-            {
-              "alias": "Upload",
-              "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
-              },
-              "dsType": "influxdb",
-              "fields": [
-                {
-                  "func": "mean",
-                  "name": "value"
-                }
-              ],
-              "fill": "null",
-              "groupBy": [
-                {
-                  "params": [
-                    "$interval"
-                  ],
-                  "type": "time"
-                },
-                {
-                  "params": [
-                    "null"
-                  ],
-                  "type": "fill"
-                }
-              ],
-              "groupByTags": [],
-              "hide": false,
-              "measurement": "fritzbox_value",
-              "orderByTime": "ASC",
-              "policy": "default",
-              "query": "SELECT non_negative_difference(last(cumulative_sum)) FROM (\nSELECT cumulative_sum(non_negative_difference(last(\"totalbytessent\"))) FROM /^$measurement$/ WHERE  (\"box\" =~ /^$boxtag$/) AND $timeFilter GROUP BY time($__interval)\n) WHERE $timeFilter GROUP BY time($__interval) tz(${timezone:singlequote})",
-              "rawQuery": true,
-              "refId": "B",
-              "resultFormat": "time_series",
-              "select": [
-                [
-                  {
-                    "params": [
-                      "value"
-                    ],
-                    "type": "field"
-                  },
-                  {
-                    "params": [],
-                    "type": "mean"
-                  }
-                ]
-              ],
-              "tags": [
-                {
-                  "key": "type_instance",
-                  "operator": "=",
-                  "value": "totalbytessent"
-                }
-              ],
-              "target": "alias(summarize(nonNegativeDerivative(collectd.squirrel.fritzbox.bytes-totalbytessent,0),'1h','sum'),'upload')"
             }
           ],
           "timeFrom": "1d",
@@ -2414,7 +2306,8 @@
               },
               "custom": {
                 "align": "auto",
-                "displayMode": "auto"
+                "displayMode": "auto",
+                "inspect": false
               },
               "decimals": 2,
               "displayName": "",
@@ -2423,7 +2316,8 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green"
+                    "color": "green",
+                    "value": null
                   },
                   {
                     "color": "red",
@@ -2452,6 +2346,30 @@
                     "id": "custom.align"
                   }
                 ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "totalbytesreceived"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "Download"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "totalbytessent"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "Upload"
+                  }
+                ]
               }
             ]
           },
@@ -2473,7 +2391,7 @@
             },
             "showHeader": true
           },
-          "pluginVersion": "8.4.4",
+          "pluginVersion": "9.2.2",
           "targets": [
             {
               "alias": "Download",
@@ -2493,61 +2411,9 @@
               "measurement": "fritzbox_value",
               "orderByTime": "ASC",
               "policy": "default",
-              "query": "SELECT non_negative_difference(last(cumulative_sum)) FROM (\nSELECT cumulative_sum(non_negative_difference(last(\"totalbytesreceived\"))) FROM /^$measurement$/ WHERE (box =~ /^${boxtag}$/) AND $timeFilter GROUP BY time($__interval)\n) WHERE $timeFilter GROUP BY time(1d) tz(${timezone:singlequote})",
+              "query": "import \"timezone\"\noption location = timezone.location(name: \"${timezone}\")\nfrom(bucket: v.defaultBucket)\n  |> range(start: -7d)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and \n    (\n      r._field == \"totalbytesreceived\" or\n      r._field == \"totalbytessent\"\n    )\n  )\n  |> difference(nonNegative: true, columns: [\"_value\"])\n  |> fill(column: \"_value\", usePrevious: true)\n  |> cumulativeSum(columns: [\"_value\"])\n  |> aggregateWindow(every: 1d, fn: last, createEmpty: false)\n  |> timeShift(duration: -1ns, columns: [\"_time\"])\n  |> difference(nonNegative: true, columns: [\"_value\"])\n  |> drop(columns: [\"box\", \"_measurement\"])\n  |> truncateTimeColumn(unit: 1m)\n  |> timeShift(duration: 1ns, columns: [\"_time\"])",
               "rawQuery": true,
               "refId": "A",
-              "resultFormat": "time_series",
-              "select": [
-                [
-                  {
-                    "params": [
-                      "value"
-                    ],
-                    "type": "field"
-                  },
-                  {
-                    "params": [],
-                    "type": "max"
-                  },
-                  {
-                    "params": [
-                      "10s"
-                    ],
-                    "type": "non_negative_derivative"
-                  }
-                ]
-              ],
-              "tags": [
-                {
-                  "key": "type_instance",
-                  "operator": "=",
-                  "value": "totalbytesreceived"
-                }
-              ],
-              "target": ""
-            },
-            {
-              "alias": "Upload",
-              "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
-              },
-              "dsType": "influxdb",
-              "groupBy": [
-                {
-                  "params": [
-                    "1d"
-                  ],
-                  "type": "time"
-                }
-              ],
-              "hide": false,
-              "measurement": "fritzbox_value",
-              "orderByTime": "ASC",
-              "policy": "default",
-              "query": "SELECT non_negative_difference(last(cumulative_sum)) FROM (\nSELECT cumulative_sum(non_negative_difference(last(\"totalbytessent\"))) FROM /^$measurement$/ WHERE (box =~ /^${boxtag}$/) AND $timeFilter GROUP BY time($__interval)\n)  WHERE $timeFilter GROUP BY time(1d) tz(${timezone:singlequote})",
-              "rawQuery": true,
-              "refId": "B",
               "resultFormat": "time_series",
               "select": [
                 [
@@ -2588,6 +2454,18 @@
                 "byField": "Time",
                 "reducers": []
               }
+            },
+            {
+              "id": "sortBy",
+              "options": {
+                "fields": {},
+                "sort": [
+                  {
+                    "desc": true,
+                    "field": "Time"
+                  }
+                ]
+              }
             }
           ],
           "type": "table"
@@ -2619,7 +2497,8 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green"
+                    "color": "green",
+                    "value": null
                   },
                   {
                     "color": "red",
@@ -2655,7 +2534,7 @@
             },
             "textMode": "auto"
           },
-          "pluginVersion": "8.4.4",
+          "pluginVersion": "9.2.2",
           "targets": [
             {
               "datasource": {
@@ -2667,7 +2546,7 @@
               "measurement": "/^$measurement$/",
               "orderByTime": "ASC",
               "policy": "default",
-              "query": "SELECT \"totalbytessent\" FROM /^$measurement$/ WHERE $timeFilter",
+              "query": "from(bucket: v.defaultBucket)\n  |> range(start: -1d)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field == \"totalbytessent\" )\n  |> aggregateWindow(every: 15m, fn: last, createEmpty: false)",
               "rawQuery": false,
               "refId": "A",
               "resultFormat": "time_series",
@@ -2721,7 +2600,8 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green"
+                    "color": "green",
+                    "value": null
                   },
                   {
                     "color": "red",
@@ -2757,7 +2637,7 @@
             },
             "textMode": "auto"
           },
-          "pluginVersion": "8.4.4",
+          "pluginVersion": "9.2.2",
           "targets": [
             {
               "datasource": {
@@ -2770,7 +2650,7 @@
               "measurement": "/^$measurement$/",
               "orderByTime": "ASC",
               "policy": "default",
-              "query": "SELECT last(\"DEV\") FROM(\nSELECT derivative(last(\"totalbytesreceived\"), $interval) as \"DEV\" FROM /^$measurement$/ WHERE (\"box\" =~ /^$boxtag$/) AND $timeFilter GROUP BY time($interval), \"box\") WHERE \"DEV\" < 0\n",
+              "query": "from(bucket: v.defaultBucket)\n  |> range(start: -1d)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field == \"totalbytesreceived\" )\n  |> aggregateWindow(every: 15m, fn: last, createEmpty: false)\n",
               "rawQuery": false,
               "refId": "A",
               "resultFormat": "table",
@@ -2805,6 +2685,10 @@
     },
     {
       "collapsed": true,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "000000002"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -2824,6 +2708,8 @@
                 "mode": "palette-classic"
               },
               "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
                 "axisLabel": "Num clients",
                 "axisPlacement": "auto",
                 "barAlignment": 0,
@@ -2892,7 +2778,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 23
+            "y": 3
           },
           "id": 55,
           "options": {
@@ -2901,7 +2787,8 @@
                 "lastNotNull"
               ],
               "displayMode": "list",
-              "placement": "bottom"
+              "placement": "bottom",
+              "showLegend": true
             },
             "tooltip": {
               "mode": "multi",
@@ -2931,7 +2818,7 @@
               "measurement": "/^$measurement$/",
               "orderByTime": "ASC",
               "policy": "default",
-              "query": "SELECT mean(\"wlan1_associations\") AS \"2.4 GHz Clients\", mean(\"wlan2_associations\") AS \"5 GHz Clients\", mean(\"wlan3_associations\") AS \"Guest Clients\" FROM /^$measurement$/ WHERE (\"box\" =~ /^$boxtag$/) AND $timeFilter GROUP BY time($__interval) fill(null)",
+              "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field =~ /^wlan._associations$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\"])\n\n",
               "rawQuery": false,
               "refId": "A",
               "resultFormat": "time_series",
@@ -3003,25 +2890,33 @@
           "title": "WLAN Clients",
           "transformations": [
             {
-              "id": "renameByRegex",
-              "options": {
-                "regex": "fritzbox.(.*)",
-                "renamePattern": "$1"
-              }
-            },
-            {
               "id": "calculateField",
               "options": {
                 "mode": "reduceRow",
                 "reduce": {
                   "include": [
-                    "2.4 GHz Clients",
-                    "5 GHz Clients",
-                    "Guest Clients"
+                    "wlan1_associations",
+                    "wlan2_associations",
+                    "wlan3_associations"
                   ],
                   "reducer": "sum"
                 },
                 "replaceFields": false
+              }
+            },
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Total": false
+                },
+                "indexByName": {},
+                "renameByName": {
+                  "Total": "",
+                  "wlan1_associations": "2.4 GHz Clients",
+                  "wlan2_associations": "5 GHz Clients",
+                  "wlan3_associations": "Guest Clients"
+                }
               }
             }
           ],
@@ -3039,6 +2934,8 @@
                 "mode": "palette-classic"
               },
               "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
                 "axisLabel": "WLAN channel",
                 "axisPlacement": "auto",
                 "barAlignment": 0,
@@ -3104,7 +3001,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 23
+            "y": 3
           },
           "id": 56,
           "options": {
@@ -3113,7 +3010,8 @@
                 "lastNotNull"
               ],
               "displayMode": "list",
-              "placement": "bottom"
+              "placement": "bottom",
+              "showLegend": true
             },
             "tooltip": {
               "mode": "multi",
@@ -3143,7 +3041,7 @@
               "measurement": "/^$measurement$/",
               "orderByTime": "ASC",
               "policy": "default",
-              "query": "SELECT mean(\"wlan1_associations\") AS \"2.4 GHz Clients\", mean(\"wlan2_associations\") AS \"5 GHz Clients\", mean(\"wlan3_associations\") AS \"Guest Clients\" FROM /^$measurement$/ WHERE (\"box\" =~ /^$boxtag$/) AND $timeFilter GROUP BY time($__interval) fill(null)",
+              "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field =~ /^wlan._channel$/)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\"])\n",
               "rawQuery": false,
               "refId": "A",
               "resultFormat": "time_series",
@@ -3215,10 +3113,22 @@
           "title": "WLAN Channel",
           "transformations": [
             {
-              "id": "renameByRegex",
+              "id": "calculateField",
+              "options": {}
+            },
+            {
+              "id": "organize",
               "options": {
-                "regex": "fritzbox.(.*)",
-                "renamePattern": "$1"
+                "excludeByName": {
+                  "Total": true
+                },
+                "indexByName": {},
+                "renameByName": {
+                  "Total": "",
+                  "wlan1_channel": "2.4 GHz",
+                  "wlan2_channel": "5 GHz",
+                  "wlan3_channel": "Guest"
+                }
               }
             }
           ],
@@ -3237,7 +3147,8 @@
               "custom": {
                 "align": "auto",
                 "displayMode": "auto",
-                "filterable": false
+                "filterable": false,
+                "inspect": false
               },
               "mappings": [],
               "thresholds": {
@@ -3245,34 +3156,17 @@
                 "steps": [
                   {
                     "color": "green"
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
                   }
                 ]
               }
             },
-            "overrides": [
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "Metric"
-                },
-                "properties": [
-                  {
-                    "id": "custom.width",
-                    "value": 160
-                  }
-                ]
-              }
-            ]
+            "overrides": []
           },
           "gridPos": {
             "h": 5,
             "w": 24,
             "x": 0,
-            "y": 31
+            "y": 11
           },
           "id": 60,
           "options": {
@@ -3283,10 +3177,10 @@
               ],
               "show": false
             },
-            "frameIndex": 0,
+            "frameIndex": 10,
             "showHeader": true
           },
-          "pluginVersion": "8.4.4",
+          "pluginVersion": "9.1.6",
           "targets": [
             {
               "alias": "2.4 GHz Status",
@@ -3300,7 +3194,7 @@
               "measurement": "/^$measurement$/",
               "orderByTime": "ASC",
               "policy": "default",
-              "query": "SELECT \"wlan1_status\" AS \"Status\", \"wlan1_802.11_standard\", \"wlan1_ssid\", \"wlan1_ssid\" FROM /^$measurement$/ WHERE (\"box\" =~ /^$boxtag$/) AND $timeFilter LIMIT 1",
+              "query": "finalMap = (tables=<-) => tables\n  |> map(fn: (r) =>  ({\n        r with _field:\n          if r._field =~ /.*ssid/ then \"Name\"\n          else if r._field =~ /.*status/ then \"Status\"\n          else if r._field =~ /.*standard/ then \"Standard\"\n          else if r._field =~ /.*channel/ then \"Channel\"\n          else if r._field =~ /.*associations/ then \"Clients\"\n          else r._field\n        })\n      )\n\n\nfrom(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field =~ /^wlan1.*$/)\n  |> last()\n  |> toString()\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\"])\n  |> truncateTimeColumn(unit: 1h)\n  |> finalMap()\n",
               "rawQuery": false,
               "refId": "A",
               "resultFormat": "table",
@@ -3416,7 +3310,7 @@
               "measurement": "/^$measurement$/",
               "orderByTime": "ASC",
               "policy": "default",
-              "query": "SELECT \"wlan1_status\" AS \"Status\", \"wlan1_802.11_standard\", \"wlan1_ssid\", \"wlan1_ssid\" FROM /^$measurement$/ WHERE (\"box\" =~ /^$boxtag$/) AND $timeFilter LIMIT 1",
+              "query": "finalMap = (tables=<-) => tables\n  |> map(fn: (r) =>  ({\n        r with _field:\n          if r._field =~ /.*ssid/ then \"Name\"\n          else if r._field =~ /.*status/ then \"Status\"\n          else if r._field =~ /.*standard/ then \"Standard\"\n          else if r._field =~ /.*channel/ then \"Channel\"\n          else if r._field =~ /.*associations/ then \"Clients\"\n          else r._field\n        })\n      )\n\n\nfrom(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field =~ /^wlan2.*$/)\n  |> last()\n  |> toString()\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\"])\n  |> truncateTimeColumn(unit: 1h)\n  |> finalMap()",
               "rawQuery": false,
               "refId": "B",
               "resultFormat": "table",
@@ -3532,7 +3426,7 @@
               "measurement": "/^$measurement$/",
               "orderByTime": "ASC",
               "policy": "default",
-              "query": "SELECT \"wlan1_status\" AS \"Status\", \"wlan1_802.11_standard\", \"wlan1_ssid\", \"wlan1_ssid\" FROM /^$measurement$/ WHERE (\"box\" =~ /^$boxtag$/) AND $timeFilter LIMIT 1",
+              "query": "finalMap = (tables=<-) => tables\n  |> map(fn: (r) =>  ({\n        r with _field:\n          if r._field =~ /.*ssid/ then \"Name\"\n          else if r._field =~ /.*status/ then \"Status\"\n          else if r._field =~ /.*standard/ then \"Standard\"\n          else if r._field =~ /.*channel/ then \"Channel\"\n          else if r._field =~ /.*associations/ then \"Clients\"\n          else r._field\n        })\n      )\n\n\nfrom(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field =~ /^wlan3.*$/)\n  |> last()\n  |> toString()\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\"])\n  |> truncateTimeColumn(unit: 1h)\n  |> finalMap()\n",
               "rawQuery": false,
               "refId": "C",
               "resultFormat": "table",
@@ -3640,50 +3534,24 @@
           "title": "WLAN Info",
           "transformations": [
             {
-              "disabled": true,
-              "id": "renameByRegex",
-              "options": {
-                "regex": "fritzbox.(.*)",
-                "renamePattern": "$1"
-              }
-            },
-            {
-              "disabled": true,
-              "id": "seriesToRows",
-              "options": {}
-            },
-            {
-              "id": "filterFieldsByName",
-              "options": {
-                "include": {
-                  "names": [
-                    "Name",
-                    "Status",
-                    "Standard",
-                    "Channel",
-                    "Clients"
-                  ]
-                }
-              }
-            },
-            {
               "id": "merge",
               "options": {}
             },
             {
-              "id": "convertFieldType",
+              "id": "organize",
               "options": {
-                "conversions": [
-                  {
-                    "destinationType": "string",
-                    "targetField": "Channel"
-                  },
-                  {
-                    "destinationType": "string",
-                    "targetField": "Clients"
-                  }
-                ],
-                "fields": {}
+                "excludeByName": {
+                  "Time": true
+                },
+                "indexByName": {
+                  "Channel": 4,
+                  "Clients": 5,
+                  "Name": 1,
+                  "Standard": 3,
+                  "Status": 2,
+                  "Time": 0
+                },
+                "renameByName": {}
               }
             }
           ],
@@ -3695,6 +3563,10 @@
     },
     {
       "collapsed": true,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "000000002"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -3716,6 +3588,8 @@
                 "seriesBy": "last"
               },
               "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
                 "axisLabel": "",
                 "axisPlacement": "auto",
                 "axisSoftMin": 0,
@@ -3759,20 +3633,34 @@
               },
               "unit": "percent"
             },
-            "overrides": []
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "cpu_utilization"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "CPU Utilization"
+                  }
+                ]
+              }
+            ]
           },
           "gridPos": {
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 37
+            "y": 4
           },
           "id": 45,
           "options": {
             "legend": {
               "calcs": [],
-              "displayMode": "hidden",
-              "placement": "bottom"
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": false
             },
             "tooltip": {
               "mode": "multi",
@@ -3803,6 +3691,7 @@
               "measurement": "/^$measurement$/",
               "orderByTime": "ASC",
               "policy": "default",
+              "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field == \"cpu_utilization\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\"])\n\n",
               "refId": "A",
               "resultFormat": "time_series",
               "select": [
@@ -3843,6 +3732,8 @@
                 "mode": "palette-classic"
               },
               "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
                 "axisLabel": "",
                 "axisPlacement": "auto",
                 "barAlignment": 0,
@@ -3886,7 +3777,7 @@
               {
                 "matcher": {
                   "id": "byName",
-                  "options": "Fixed"
+                  "options": "ram_usage_fixed"
                 },
                 "properties": [
                   {
@@ -3895,13 +3786,17 @@
                       "fixedColor": "#268edf",
                       "mode": "fixed"
                     }
+                  },
+                  {
+                    "id": "displayName",
+                    "value": "Fixed"
                   }
                 ]
               },
               {
                 "matcher": {
                   "id": "byName",
-                  "options": "Dynamic"
+                  "options": "ram_usage_dynamic"
                 },
                 "properties": [
                   {
@@ -3910,13 +3805,17 @@
                       "fixedColor": "#d9a542",
                       "mode": "fixed"
                     }
+                  },
+                  {
+                    "id": "displayName",
+                    "value": "Dynamic"
                   }
                 ]
               },
               {
                 "matcher": {
                   "id": "byName",
-                  "options": "Free"
+                  "options": "ram_usage_free"
                 },
                 "properties": [
                   {
@@ -3925,6 +3824,10 @@
                       "fixedColor": "#71ab4b",
                       "mode": "fixed"
                     }
+                  },
+                  {
+                    "id": "displayName",
+                    "value": "Free"
                   }
                 ]
               }
@@ -3934,14 +3837,15 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 37
+            "y": 4
           },
           "id": 49,
           "options": {
             "legend": {
               "calcs": [],
               "displayMode": "list",
-              "placement": "bottom"
+              "placement": "bottom",
+              "showLegend": true
             },
             "tooltip": {
               "mode": "multi",
@@ -3968,9 +3872,11 @@
                   "type": "fill"
                 }
               ],
+              "hide": false,
               "measurement": "/^$measurement$/",
               "orderByTime": "ASC",
               "policy": "default",
+              "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field == \"ram_usage_fixed\" )\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\"])\n",
               "refId": "A",
               "resultFormat": "time_series",
               "select": [
@@ -4036,18 +3942,28 @@
                   "value": "/^$boxtag$/"
                 }
               ]
+            },
+            {
+              "datasource": {
+                "type": "influxdb",
+                "uid": "${DS_INFLUXDB}"
+              },
+              "hide": false,
+              "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field == \"ram_usage_dynamic\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\"])\n",
+              "refId": "B"
+            },
+            {
+              "datasource": {
+                "type": "influxdb",
+                "uid": "${DS_INFLUXDB}"
+              },
+              "hide": false,
+              "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field == \"ram_usage_free\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\"])\n",
+              "refId": "C"
             }
           ],
           "title": "RAM usage",
-          "transformations": [
-            {
-              "id": "renameByRegex",
-              "options": {
-                "regex": "fritzbox.(.*)",
-                "renamePattern": "$1"
-              }
-            }
-          ],
+          "transformations": [],
           "type": "timeseries"
         },
         {
@@ -4062,6 +3978,8 @@
                 "mode": "continuous-GrYlRd"
               },
               "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
                 "axisLabel": "",
                 "axisPlacement": "auto",
                 "barAlignment": 0,
@@ -4110,14 +4028,15 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 45
+            "y": 12
           },
           "id": 51,
           "options": {
             "legend": {
               "calcs": [],
-              "displayMode": "hidden",
-              "placement": "bottom"
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": false
             },
             "tooltip": {
               "mode": "multi",
@@ -4148,6 +4067,7 @@
               "measurement": "/^$measurement$/",
               "orderByTime": "ASC",
               "policy": "default",
+              "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field == \"cpu_temp\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\"])\n\n",
               "refId": "A",
               "resultFormat": "time_series",
               "select": [
@@ -4208,11 +4128,13 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 45
+            "y": 12
           },
           "id": 53,
           "options": {
             "displayMode": "lcd",
+            "minVizHeight": 10,
+            "minVizWidth": 0,
             "orientation": "horizontal",
             "reduceOptions": {
               "calcs": [
@@ -4227,7 +4149,7 @@
               "valueSize": 12
             }
           },
-          "pluginVersion": "8.4.4",
+          "pluginVersion": "9.1.6",
           "targets": [
             {
               "alias": "$tag_name",
@@ -4258,6 +4180,7 @@
               "measurement": "/^$measurement$/",
               "orderByTime": "ASC",
               "policy": "default",
+              "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field == \"energy_consumption\")\n  |> last()",
               "refId": "A",
               "resultFormat": "time_series",
               "select": [
@@ -4284,7 +4207,15 @@
             }
           ],
           "title": "System Energy Consumption",
-          "transformations": [],
+          "transformations": [
+            {
+              "id": "renameByRegex",
+              "options": {
+                "regex": ".*name=\"(.*)\"}",
+                "renamePattern": "$1"
+              }
+            }
+          ],
           "type": "bargauge"
         },
         {
@@ -4300,7 +4231,8 @@
               "custom": {
                 "align": "auto",
                 "displayMode": "color-background",
-                "filterable": false
+                "filterable": false,
+                "inspect": false
               },
               "mappings": [],
               "noValue": "None",
@@ -4343,7 +4275,7 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 54
+            "y": 21
           },
           "hideTimeOverride": true,
           "id": 20,
@@ -4357,9 +4289,10 @@
               ],
               "show": false
             },
+            "frameIndex": 2,
             "showHeader": false
           },
-          "pluginVersion": "8.4.4",
+          "pluginVersion": "9.1.6",
           "targets": [
             {
               "datasource": {
@@ -4371,6 +4304,7 @@
               "measurement": "/^$measurement$/",
               "orderByTime": "ASC",
               "policy": "default",
+              "query": "from(bucket: v.defaultBucket)\n  |> range(start: -1d)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and\n    (\n      r._field == \"external_ip\" or\n      r._field == \"external_ipv6\" or\n      r._field == \"model\" or\n      r._field == \"serialnumber\" or\n      r._field == \"softwareversion\" or\n      r._field == \"last_auth_error\" or\n      r._field == \"myfritz_host_name\"\n    ) \n  )\n  |> last()\n  |> toString()\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\", \"_time\"])\n  |> map(fn: (r) =>  ({\n        r with _field:\n          if r._field == \"external_ip\" then \"IPv4\"\n          else if r._field == \"external_ipv6\" then \"IPv6\"\n          else if r._field == \"model\" then \"Model\"\n          else if r._field == \"serialnumber\" then \"Serial\"\n          else if r._field == \"softwareversion\" then \"SW Version\"\n          else if r._field == \"last_auth_error\" then \"Last Auth Error\"\n          else if r._field == \"myfritz_host_name\" then \"MyFritz Hostname\"\n          else r._field\n        })\n      )\n",
               "refId": "B",
               "resultFormat": "table",
               "select": [
@@ -4400,252 +4334,18 @@
                   "value": "/^$boxtag$/"
                 }
               ]
-            },
-            {
-              "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
-              },
-              "groupBy": [],
-              "hide": false,
-              "measurement": "/^$measurement$/",
-              "orderByTime": "ASC",
-              "policy": "default",
-              "refId": "C",
-              "resultFormat": "table",
-              "select": [
-                [
-                  {
-                    "params": [
-                      "external_ipv6"
-                    ],
-                    "type": "field"
-                  },
-                  {
-                    "params": [],
-                    "type": "last"
-                  },
-                  {
-                    "params": [
-                      "IPv6"
-                    ],
-                    "type": "alias"
-                  }
-                ]
-              ],
-              "tags": [
-                {
-                  "key": "box",
-                  "operator": "=~",
-                  "value": "/^$boxtag$/"
-                }
-              ]
-            },
-            {
-              "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
-              },
-              "groupBy": [],
-              "hide": false,
-              "measurement": "/^$measurement$/",
-              "orderByTime": "ASC",
-              "policy": "default",
-              "refId": "D",
-              "resultFormat": "table",
-              "select": [
-                [
-                  {
-                    "params": [
-                      "model"
-                    ],
-                    "type": "field"
-                  },
-                  {
-                    "params": [],
-                    "type": "last"
-                  },
-                  {
-                    "params": [
-                      "Model"
-                    ],
-                    "type": "alias"
-                  }
-                ]
-              ],
-              "tags": [
-                {
-                  "key": "box",
-                  "operator": "=~",
-                  "value": "/^$boxtag$/"
-                }
-              ]
-            },
-            {
-              "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
-              },
-              "groupBy": [],
-              "hide": false,
-              "measurement": "/^$measurement$/",
-              "orderByTime": "ASC",
-              "policy": "default",
-              "refId": "E",
-              "resultFormat": "table",
-              "select": [
-                [
-                  {
-                    "params": [
-                      "serialnumber"
-                    ],
-                    "type": "field"
-                  },
-                  {
-                    "params": [],
-                    "type": "last"
-                  },
-                  {
-                    "params": [
-                      "Serial"
-                    ],
-                    "type": "alias"
-                  }
-                ]
-              ],
-              "tags": [
-                {
-                  "key": "box",
-                  "operator": "=~",
-                  "value": "/^$boxtag$/"
-                }
-              ]
-            },
-            {
-              "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
-              },
-              "groupBy": [],
-              "hide": false,
-              "measurement": "/^$measurement$/",
-              "orderByTime": "ASC",
-              "policy": "default",
-              "refId": "F",
-              "resultFormat": "table",
-              "select": [
-                [
-                  {
-                    "params": [
-                      "softwareversion"
-                    ],
-                    "type": "field"
-                  },
-                  {
-                    "params": [],
-                    "type": "last"
-                  },
-                  {
-                    "params": [
-                      "SW Version"
-                    ],
-                    "type": "alias"
-                  }
-                ]
-              ],
-              "tags": [
-                {
-                  "key": "box",
-                  "operator": "=~",
-                  "value": "/^$boxtag$/"
-                }
-              ]
-            },
-            {
-              "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
-              },
-              "groupBy": [],
-              "hide": false,
-              "measurement": "/^$measurement$/",
-              "orderByTime": "ASC",
-              "policy": "default",
-              "refId": "L",
-              "resultFormat": "table",
-              "select": [
-                [
-                  {
-                    "params": [
-                      "last_auth_error"
-                    ],
-                    "type": "field"
-                  },
-                  {
-                    "params": [],
-                    "type": "last"
-                  },
-                  {
-                    "params": [
-                      "Last Auth Error"
-                    ],
-                    "type": "alias"
-                  }
-                ]
-              ],
-              "tags": [
-                {
-                  "key": "box",
-                  "operator": "=~",
-                  "value": "/^$boxtag$/"
-                }
-              ]
-            },
-            {
-              "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
-              },
-              "groupBy": [],
-              "hide": false,
-              "measurement": "/^$measurement$/",
-              "orderByTime": "ASC",
-              "policy": "default",
-              "refId": "A",
-              "resultFormat": "table",
-              "select": [
-                [
-                  {
-                    "params": [
-                      "myfritz_host_name"
-                    ],
-                    "type": "field"
-                  },
-                  {
-                    "params": [],
-                    "type": "last"
-                  },
-                  {
-                    "params": [
-                      "MyFritz Hostname"
-                    ],
-                    "type": "alias"
-                  }
-                ]
-              ],
-              "tags": [
-                {
-                  "key": "box",
-                  "operator": "=~",
-                  "value": "/^$boxtag$/"
-                }
-              ]
             }
           ],
           "title": "FritzBox Info",
           "transformations": [
             {
-              "id": "seriesToRows",
+              "id": "labelsToFields",
+              "options": {
+                "mode": "columns"
+              }
+            },
+            {
+              "id": "merge",
               "options": {}
             },
             {
@@ -4654,19 +4354,14 @@
                 "excludeByName": {
                   "Time": true
                 },
-                "indexByName": {},
-                "renameByName": {}
-              }
-            },
-            {
-              "id": "sortBy",
-              "options": {
-                "fields": {},
-                "sort": [
-                  {
-                    "field": "Metric"
-                  }
-                ]
+                "indexByName": {
+                  "_field": 0,
+                  "_value": 1
+                },
+                "renameByName": {
+                  "_field": "Metric",
+                  "_value": "Value"
+                }
               }
             }
           ],
@@ -4685,10 +4380,10 @@
               "custom": {
                 "align": "auto",
                 "displayMode": "color-background",
-                "filterable": false
+                "filterable": false,
+                "inspect": false
               },
               "mappings": [],
-              "noValue": "None",
               "thresholds": {
                 "mode": "absolute",
                 "steps": [
@@ -4728,7 +4423,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 54
+            "y": 21
           },
           "hideTimeOverride": true,
           "id": 74,
@@ -4744,7 +4439,7 @@
             },
             "showHeader": false
           },
-          "pluginVersion": "8.4.4",
+          "pluginVersion": "9.1.6",
           "targets": [
             {
               "datasource": {
@@ -4756,6 +4451,7 @@
               "measurement": "/^$measurement$/",
               "orderByTime": "ASC",
               "policy": "default",
+              "query": "from(bucket: v.defaultBucket)\n  |> range(start: -1d)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and\n    (\n      r._field == \"physicallinktype\" or\n      r._field == \"dsl_line_length\" or\n      r._field == \"dsl_dslam_vendor\" or\n      r._field == \"dsl_dslam_sw_version\" or\n      r._field == \"dsl_line_mode\" or\n      r._field == \"cable_cmts_vendor\" or\n      r._field == \"cable_line_mode\" or\n      r._field == \"cable_modem_version\" or\n      r._field == \"cable_num_ds_channels\" or\n      r._field == \"cable_num_us_channels\" or\n      r._field == \"connection_status\" or\n      r._field == \"last_connection_error\" or\n      r._field == \"remote_pop\"\n    ) \n  )\n  |> last()\n  |> toString()\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\", \"_time\"])\n  |> map(fn: (r) =>  ({\n        r with _field:\n          if r._field == \"physicallinktype\" then \"Link Type\"\n          else if r._field == \"dsl_line_length\" then \"DSL Line Length\"\n          else if r._field == \"dsl_dslam_vendor\" then \"DSL DSLAM Vendor\"\n          else if r._field == \"dsl_dslam_sw_version\" then \"DSL Model Version\"\n          else if r._field == \"dsl_line_mode\" then \"DSL Line Mode\"\n          else if r._field == \"cable_cmts_vendor\" then \"Cable Vendor\"\n          else if r._field == \"cable_line_mode\" then \"Cable Line Mode\"\n          else if r._field == \"cable_modem_version\" then \"Cable Modem Version\"\n          else if r._field == \"cable_num_ds_channels\" then \"Cable Downstream Channels\"\n          else if r._field == \"cable_num_us_channels\" then \"Cable Upstream Channels\"\n          else if r._field == \"connection_status\" then \"Connection Status\"\n          else if r._field == \"last_connection_error\" then \"Last Connection Error\"\n          else if r._field == \"remote_pop\" then \"Remote Pop\"\n          else r._field\n        })\n      )\n",
               "refId": "B",
               "resultFormat": "table",
               "select": [
@@ -4785,514 +4481,109 @@
                   "value": "/^$boxtag$/"
                 }
               ]
-            },
-            {
-              "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
-              },
-              "groupBy": [],
-              "hide": false,
-              "measurement": "/^$measurement$/",
-              "orderByTime": "ASC",
-              "policy": "default",
-              "refId": "A",
-              "resultFormat": "table",
-              "select": [
-                [
-                  {
-                    "params": [
-                      "dsl_line_length"
-                    ],
-                    "type": "field"
-                  },
-                  {
-                    "params": [],
-                    "type": "last"
-                  },
-                  {
-                    "params": [
-                      "DSL Line Length"
-                    ],
-                    "type": "alias"
-                  }
-                ]
-              ],
-              "tags": [
-                {
-                  "key": "box",
-                  "operator": "=~",
-                  "value": "/^$boxtag$/"
-                }
-              ]
-            },
-            {
-              "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
-              },
-              "groupBy": [],
-              "hide": false,
-              "measurement": "/^$measurement$/",
-              "orderByTime": "ASC",
-              "policy": "default",
-              "refId": "C",
-              "resultFormat": "table",
-              "select": [
-                [
-                  {
-                    "params": [
-                      "dsl_dslam_vendor"
-                    ],
-                    "type": "field"
-                  },
-                  {
-                    "params": [],
-                    "type": "last"
-                  },
-                  {
-                    "params": [
-                      "DSL DSLAM Vendor"
-                    ],
-                    "type": "alias"
-                  }
-                ]
-              ],
-              "tags": [
-                {
-                  "key": "box",
-                  "operator": "=~",
-                  "value": "/^$boxtag$/"
-                }
-              ]
-            },
-            {
-              "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
-              },
-              "groupBy": [],
-              "hide": false,
-              "measurement": "/^$measurement$/",
-              "orderByTime": "ASC",
-              "policy": "default",
-              "refId": "D",
-              "resultFormat": "table",
-              "select": [
-                [
-                  {
-                    "params": [
-                      "dsl_dslam_sw_version"
-                    ],
-                    "type": "field"
-                  },
-                  {
-                    "params": [],
-                    "type": "last"
-                  },
-                  {
-                    "params": [
-                      "DSL Model Version"
-                    ],
-                    "type": "alias"
-                  }
-                ]
-              ],
-              "tags": [
-                {
-                  "key": "box",
-                  "operator": "=~",
-                  "value": "/^$boxtag$/"
-                }
-              ]
-            },
-            {
-              "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
-              },
-              "groupBy": [],
-              "hide": false,
-              "measurement": "/^$measurement$/",
-              "orderByTime": "ASC",
-              "policy": "default",
-              "refId": "E",
-              "resultFormat": "table",
-              "select": [
-                [
-                  {
-                    "params": [
-                      "dsl_line_mode"
-                    ],
-                    "type": "field"
-                  },
-                  {
-                    "params": [],
-                    "type": "last"
-                  },
-                  {
-                    "params": [
-                      "DSL Line Mode"
-                    ],
-                    "type": "alias"
-                  }
-                ]
-              ],
-              "tags": [
-                {
-                  "key": "box",
-                  "operator": "=~",
-                  "value": "/^$boxtag$/"
-                }
-              ]
-            },
-            {
-              "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
-              },
-              "groupBy": [],
-              "hide": false,
-              "measurement": "/^$measurement$/",
-              "orderByTime": "ASC",
-              "policy": "default",
-              "refId": "F",
-              "resultFormat": "table",
-              "select": [
-                [
-                  {
-                    "params": [
-                      "cable_cmts_vendor"
-                    ],
-                    "type": "field"
-                  },
-                  {
-                    "params": [],
-                    "type": "last"
-                  },
-                  {
-                    "params": [
-                      "Cable Vendor"
-                    ],
-                    "type": "alias"
-                  }
-                ]
-              ],
-              "tags": [
-                {
-                  "key": "box",
-                  "operator": "=~",
-                  "value": "/^$boxtag$/"
-                }
-              ]
-            },
-            {
-              "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
-              },
-              "groupBy": [],
-              "hide": false,
-              "measurement": "/^$measurement$/",
-              "orderByTime": "ASC",
-              "policy": "default",
-              "refId": "G",
-              "resultFormat": "table",
-              "select": [
-                [
-                  {
-                    "params": [
-                      "cable_line_mode"
-                    ],
-                    "type": "field"
-                  },
-                  {
-                    "params": [],
-                    "type": "last"
-                  },
-                  {
-                    "params": [
-                      "Cable Line Mode"
-                    ],
-                    "type": "alias"
-                  }
-                ]
-              ],
-              "tags": [
-                {
-                  "key": "box",
-                  "operator": "=~",
-                  "value": "/^$boxtag$/"
-                }
-              ]
-            },
-            {
-              "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
-              },
-              "groupBy": [],
-              "hide": false,
-              "measurement": "/^$measurement$/",
-              "orderByTime": "ASC",
-              "policy": "default",
-              "refId": "H",
-              "resultFormat": "table",
-              "select": [
-                [
-                  {
-                    "params": [
-                      "cable_modem_version"
-                    ],
-                    "type": "field"
-                  },
-                  {
-                    "params": [],
-                    "type": "last"
-                  },
-                  {
-                    "params": [
-                      "Cable Modem Version"
-                    ],
-                    "type": "alias"
-                  }
-                ]
-              ],
-              "tags": [
-                {
-                  "key": "box",
-                  "operator": "=~",
-                  "value": "/^$boxtag$/"
-                }
-              ]
-            },
-            {
-              "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
-              },
-              "groupBy": [],
-              "hide": false,
-              "measurement": "/^$measurement$/",
-              "orderByTime": "ASC",
-              "policy": "default",
-              "refId": "I",
-              "resultFormat": "table",
-              "select": [
-                [
-                  {
-                    "params": [
-                      "cable_num_ds_channels"
-                    ],
-                    "type": "field"
-                  },
-                  {
-                    "params": [],
-                    "type": "last"
-                  },
-                  {
-                    "params": [
-                      "Cable Downstream Channels"
-                    ],
-                    "type": "alias"
-                  }
-                ]
-              ],
-              "tags": [
-                {
-                  "key": "box",
-                  "operator": "=~",
-                  "value": "/^$boxtag$/"
-                }
-              ]
-            },
-            {
-              "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
-              },
-              "groupBy": [],
-              "hide": false,
-              "measurement": "/^$measurement$/",
-              "orderByTime": "ASC",
-              "policy": "default",
-              "refId": "J",
-              "resultFormat": "table",
-              "select": [
-                [
-                  {
-                    "params": [
-                      "cable_num_us_channels"
-                    ],
-                    "type": "field"
-                  },
-                  {
-                    "params": [],
-                    "type": "last"
-                  },
-                  {
-                    "params": [
-                      "Cable Upstream Channels"
-                    ],
-                    "type": "alias"
-                  }
-                ]
-              ],
-              "tags": [
-                {
-                  "key": "box",
-                  "operator": "=~",
-                  "value": "/^$boxtag$/"
-                }
-              ]
-            },
-            {
-              "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
-              },
-              "groupBy": [],
-              "hide": false,
-              "measurement": "/^$measurement$/",
-              "orderByTime": "ASC",
-              "policy": "default",
-              "refId": "K",
-              "resultFormat": "table",
-              "select": [
-                [
-                  {
-                    "params": [
-                      "connection_status"
-                    ],
-                    "type": "field"
-                  },
-                  {
-                    "params": [],
-                    "type": "last"
-                  },
-                  {
-                    "params": [
-                      "Connection Status"
-                    ],
-                    "type": "alias"
-                  }
-                ]
-              ],
-              "tags": [
-                {
-                  "key": "box",
-                  "operator": "=~",
-                  "value": "/^$boxtag$/"
-                }
-              ]
-            },
-            {
-              "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
-              },
-              "groupBy": [],
-              "hide": false,
-              "measurement": "/^$measurement$/",
-              "orderByTime": "ASC",
-              "policy": "default",
-              "refId": "L",
-              "resultFormat": "table",
-              "select": [
-                [
-                  {
-                    "params": [
-                      "last_connection_error"
-                    ],
-                    "type": "field"
-                  },
-                  {
-                    "params": [],
-                    "type": "last"
-                  },
-                  {
-                    "params": [
-                      "Last Connection Error"
-                    ],
-                    "type": "alias"
-                  }
-                ]
-              ],
-              "tags": [
-                {
-                  "key": "box",
-                  "operator": "=~",
-                  "value": "/^$boxtag$/"
-                }
-              ]
-            },
-            {
-              "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
-              },
-              "groupBy": [],
-              "hide": false,
-              "measurement": "/^$measurement$/",
-              "orderByTime": "ASC",
-              "policy": "default",
-              "refId": "M",
-              "resultFormat": "table",
-              "select": [
-                [
-                  {
-                    "params": [
-                      "remote_pop"
-                    ],
-                    "type": "field"
-                  },
-                  {
-                    "params": [],
-                    "type": "last"
-                  },
-                  {
-                    "params": [
-                      "Remote Pop"
-                    ],
-                    "type": "alias"
-                  }
-                ]
-              ],
-              "tags": [
-                {
-                  "key": "box",
-                  "operator": "=~",
-                  "value": "/^$boxtag$/"
-                }
-              ]
             }
           ],
           "title": "Connection Info",
           "transformations": [
             {
-              "id": "seriesToRows",
+              "id": "labelsToFields",
+              "options": {}
+            },
+            {
+              "id": "merge",
               "options": {}
             },
             {
               "id": "organize",
               "options": {
-                "excludeByName": {
-                  "Time": true
+                "excludeByName": {},
+                "indexByName": {
+                  "_field": 0,
+                  "_value": 1
                 },
-                "indexByName": {},
-                "renameByName": {}
+                "renameByName": {
+                  "_field": "Metric",
+                  "_value": "Value"
+                }
               }
             },
             {
-              "disabled": true,
-              "id": "sortBy",
+              "id": "filterByValue",
               "options": {
-                "fields": {},
-                "sort": [
+                "filters": [
                   {
-                    "field": "Metric"
+                    "config": {
+                      "id": "regex",
+                      "options": {
+                        "value": "Cable.*Channels"
+                      }
+                    },
+                    "fieldName": "Metric"
+                  },
+                  {
+                    "config": {
+                      "id": "equal",
+                      "options": {
+                        "value": "0"
+                      }
+                    },
+                    "fieldName": "Value"
                   }
-                ]
+                ],
+                "match": "all",
+                "type": "exclude"
+              }
+            },
+            {
+              "id": "filterByValue",
+              "options": {
+                "filters": [
+                  {
+                    "config": {
+                      "id": "regex",
+                      "options": {
+                        "value": "^Cable.*"
+                      }
+                    },
+                    "fieldName": "Metric"
+                  },
+                  {
+                    "config": {
+                      "id": "isNull",
+                      "options": {}
+                    },
+                    "fieldName": "Value"
+                  }
+                ],
+                "match": "all",
+                "type": "exclude"
+              }
+            },
+            {
+              "id": "filterByValue",
+              "options": {
+                "filters": [
+                  {
+                    "config": {
+                      "id": "regex",
+                      "options": {
+                        "value": "^DSL.*"
+                      }
+                    },
+                    "fieldName": "Metric"
+                  },
+                  {
+                    "config": {
+                      "id": "greater",
+                      "options": {
+                        "value": 0
+                      }
+                    },
+                    "fieldName": "Value"
+                  }
+                ],
+                "match": "all",
+                "type": "exclude"
               }
             }
           ],
@@ -5304,6 +4595,10 @@
     },
     {
       "collapsed": true,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "000000002"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -5323,6 +4618,8 @@
                 "mode": "palette-classic"
               },
               "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
                 "axisLabel": "",
                 "axisPlacement": "auto",
                 "barAlignment": 0,
@@ -5371,14 +4668,15 @@
             "h": 8,
             "w": 17,
             "x": 0,
-            "y": 80
+            "y": 5
           },
           "id": 64,
           "options": {
             "legend": {
               "calcs": [],
               "displayMode": "list",
-              "placement": "bottom"
+              "placement": "bottom",
+              "showLegend": true
             },
             "tooltip": {
               "mode": "multi",
@@ -5409,6 +4707,7 @@
               "measurement": "/^$measurement$/",
               "orderByTime": "ASC",
               "policy": "default",
+              "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field == \"vpn_user_num_active\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\"])",
               "refId": "A",
               "resultFormat": "time_series",
               "select": [
@@ -5435,6 +4734,18 @@
             }
           ],
           "title": "Active VPN User",
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {},
+                "indexByName": {},
+                "renameByName": {
+                  "vpn_user_num_active": "Num Users"
+                }
+              }
+            }
+          ],
           "type": "timeseries"
         },
         {
@@ -5449,7 +4760,8 @@
               },
               "custom": {
                 "align": "auto",
-                "displayMode": "auto"
+                "displayMode": "auto",
+                "inspect": false
               },
               "mappings": [],
               "thresholds": {
@@ -5471,7 +4783,7 @@
             "h": 8,
             "w": 7,
             "x": 17,
-            "y": 80
+            "y": 5
           },
           "id": 68,
           "options": {
@@ -5484,7 +4796,7 @@
             },
             "showHeader": false
           },
-          "pluginVersion": "8.4.4",
+          "pluginVersion": "9.1.6",
           "targets": [
             {
               "alias": "MyFritz Hostname",
@@ -5496,6 +4808,7 @@
               "measurement": "/^$measurement$/",
               "orderByTime": "ASC",
               "policy": "default",
+              "query": "from(bucket: v.defaultBucket)\n  |> range(start: -1d)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and\n    (\n      r._field == \"myfritz_host_name\" or\n      r._field == \"vpn_type\" or\n      r._field == \"vpn_user_num_active\"\n    ) \n  )\n  |> last()\n  |> toString()\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\", \"_time\"])\n  |> map(fn: (r) =>  ({\n        r with _field:\n          if r._field == \"myfritz_host_name\" then \"MyFritz Hostname\"\n          else if r._field == \"vpn_type\" then \"VPN Type\"\n          else if r._field == \"vpn_user_num_active\" then \"VPN User Active\"\n          else r._field\n        })\n      )\n",
               "refId": "A",
               "resultFormat": "time_series",
               "select": [
@@ -5519,82 +4832,18 @@
                   "value": "/^$boxtag$/"
                 }
               ]
-            },
-            {
-              "alias": "VPN Type",
-              "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
-              },
-              "groupBy": [],
-              "hide": false,
-              "measurement": "/^$measurement$/",
-              "orderByTime": "ASC",
-              "policy": "default",
-              "refId": "B",
-              "resultFormat": "time_series",
-              "select": [
-                [
-                  {
-                    "params": [
-                      "vpn_type"
-                    ],
-                    "type": "field"
-                  },
-                  {
-                    "params": [],
-                    "type": "last"
-                  }
-                ]
-              ],
-              "tags": [
-                {
-                  "key": "box",
-                  "operator": "=~",
-                  "value": "/^$boxtag$/"
-                }
-              ]
-            },
-            {
-              "alias": "VPN User Active",
-              "datasource": {
-                "type": "influxdb",
-                "uid": "${DS_INFLUXDB}"
-              },
-              "groupBy": [],
-              "hide": false,
-              "measurement": "/^$measurement$/",
-              "orderByTime": "ASC",
-              "policy": "default",
-              "refId": "C",
-              "resultFormat": "time_series",
-              "select": [
-                [
-                  {
-                    "params": [
-                      "vpn_user_num_active"
-                    ],
-                    "type": "field"
-                  },
-                  {
-                    "params": [],
-                    "type": "last"
-                  }
-                ]
-              ],
-              "tags": [
-                {
-                  "key": "box",
-                  "operator": "=~",
-                  "value": "/^$boxtag$/"
-                }
-              ]
             }
           ],
           "title": "VPN Infos",
           "transformations": [
             {
-              "id": "seriesToRows",
+              "id": "labelsToFields",
+              "options": {
+                "mode": "columns"
+              }
+            },
+            {
+              "id": "merge",
               "options": {}
             },
             {
@@ -5603,7 +4852,10 @@
                 "excludeByName": {
                   "Time": true
                 },
-                "indexByName": {},
+                "indexByName": {
+                  "_field": 0,
+                  "_value": 1
+                },
                 "renameByName": {}
               }
             }
@@ -5623,7 +4875,8 @@
               },
               "custom": {
                 "align": "auto",
-                "displayMode": "auto"
+                "displayMode": "auto",
+                "inspect": false
               },
               "mappings": [],
               "thresholds": {
@@ -5645,7 +4898,7 @@
             "h": 8,
             "w": 9,
             "x": 0,
-            "y": 88
+            "y": 13
           },
           "id": 62,
           "options": {
@@ -5658,7 +4911,7 @@
             },
             "showHeader": false
           },
-          "pluginVersion": "8.4.4",
+          "pluginVersion": "9.1.6",
           "targets": [
             {
               "datasource": {
@@ -5670,6 +4923,7 @@
               "measurement": "/^$measurement$/",
               "orderByTime": "ASC",
               "policy": "default",
+              "query": "from(bucket: v.defaultBucket)\n  |> range(start: -1d)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and\n    (\n      r._field == \"ddns_domain\" or\n      r._field == \"ddns_enabled\" or\n      r._field == \"ddns_mode\" or\n      r._field == \"ddns_provider_name\" or\n      r._field == \"ddns_status_ipv4\" or\n      r._field == \"ddns_status_ipv6\"\n    ) \n  )\n  |> last()\n  |> toString()\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\", \"_time\"])\n  |> map(fn: (r) =>  ({\n        r with _field:\n          if r._field == \"ddns_domain\" then \"Domain\"\n          else if r._field == \"ddns_enabled\" then \"Enabled\"\n          else if r._field == \"ddns_mode\" then \"Mode\"\n          else if r._field == \"ddns_provider_name\" then \"Provider\"\n          else if r._field == \"ddns_status_ipv4\" then \"Status IPv4\"\n          else if r._field == \"ddns_status_ipv6\" then \"Status IPv6\"\n          else r._field\n        })\n      )\n",
               "refId": "A",
               "resultFormat": "table",
               "select": [
@@ -5885,7 +5139,11 @@
           "title": "DynDNS Info",
           "transformations": [
             {
-              "id": "seriesToRows",
+              "id": "labelsToFields",
+              "options": {}
+            },
+            {
+              "id": "merge",
               "options": {}
             },
             {
@@ -5894,19 +5152,11 @@
                 "excludeByName": {
                   "Time": true
                 },
-                "indexByName": {},
+                "indexByName": {
+                  "_field": 0,
+                  "_value": 1
+                },
                 "renameByName": {}
-              }
-            },
-            {
-              "id": "sortBy",
-              "options": {
-                "fields": {},
-                "sort": [
-                  {
-                    "field": "Metric"
-                  }
-                ]
               }
             }
           ],
@@ -5925,7 +5175,8 @@
               },
               "custom": {
                 "align": "auto",
-                "displayMode": "auto"
+                "displayMode": "auto",
+                "inspect": false
               },
               "mappings": [],
               "thresholds": {
@@ -5993,7 +5244,7 @@
             "h": 8,
             "w": 15,
             "x": 9,
-            "y": 88
+            "y": 13
           },
           "id": 66,
           "options": {
@@ -6007,7 +5258,7 @@
             "frameIndex": 1,
             "showHeader": true
           },
-          "pluginVersion": "8.4.4",
+          "pluginVersion": "9.1.6",
           "targets": [
             {
               "datasource": {
@@ -6026,6 +5277,7 @@
               "measurement": "/^$measurement$/",
               "orderByTime": "ASC",
               "policy": "default",
+              "query": "from(bucket: v.defaultBucket)\n  |> range(start: -1d)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and\n    (\n      r._field == \"vpn_user_active\" or\n      r._field == \"vpn_user_connected\" or\n      r._field == \"vpn_user_virtual_address\" or\n      r._field == \"vpn_user_remote_address\"\n    ) \n  )\n  |> last()\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\", \"_time\"])\n\n",
               "refId": "A",
               "resultFormat": "table",
               "select": [
@@ -6114,15 +5366,31 @@
           "title": "VPN User Overview",
           "transformations": [
             {
+              "id": "joinByLabels",
+              "options": {
+                "value": "_field"
+              }
+            },
+            {
               "id": "organize",
               "options": {
                 "excludeByName": {
                   "Time": true
                 },
-                "indexByName": {},
+                "indexByName": {
+                  "name": 0,
+                  "vpn_user_active": 1,
+                  "vpn_user_connected": 2,
+                  "vpn_user_remote_address": 4,
+                  "vpn_user_virtual_address": 3
+                },
                 "renameByName": {
                   "Active": "",
-                  "name": "Name"
+                  "name": "Name",
+                  "vpn_user_active": "Active",
+                  "vpn_user_connected": "Connected",
+                  "vpn_user_remote_address": "Remote Address",
+                  "vpn_user_virtual_address": "Virtual Address"
                 }
               }
             }
@@ -6135,6 +5403,10 @@
     },
     {
       "collapsed": true,
+      "datasource": {
+        "type": "influxdb",
+        "uid": "000000002"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -6156,7 +5428,8 @@
               },
               "custom": {
                 "align": "auto",
-                "displayMode": "auto"
+                "displayMode": "auto",
+                "inspect": false
               },
               "mappings": [],
               "thresholds": {
@@ -6232,6 +5505,18 @@
                     "value": true
                   }
                 ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Type"
+                },
+                "properties": [
+                  {
+                    "id": "custom.filterable",
+                    "value": true
+                  }
+                ]
               }
             ]
           },
@@ -6239,7 +5524,7 @@
             "h": 18,
             "w": 24,
             "x": 0,
-            "y": 26
+            "y": 6
           },
           "id": 72,
           "options": {
@@ -6258,7 +5543,7 @@
               }
             ]
           },
-          "pluginVersion": "8.4.4",
+          "pluginVersion": "9.1.6",
           "targets": [
             {
               "datasource": {
@@ -6276,6 +5561,7 @@
               "measurement": "/^$measurement$/",
               "orderByTime": "ASC",
               "policy": "default",
+              "query": "from(bucket: v.defaultBucket)\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field =~ /active_hosts_(name|mac|type|parent|port|ipv4.*|additional_text)/ )\n  |> last()\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\", \"_time\", \"name\"])\n",
               "refId": "A",
               "resultFormat": "table",
               "select": [
@@ -6424,21 +5710,39 @@
           "title": "Active Hosts",
           "transformations": [
             {
+              "id": "joinByLabels",
+              "options": {
+                "value": "_field"
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "alias": "active_hosts_ipv4_last_seen",
+                "binary": {
+                  "left": "active_hosts_ipv4_last_used",
+                  "operator": "*",
+                  "reducer": "sum",
+                  "right": "1000"
+                },
+                "mode": "binary",
+                "reduce": {
+                  "reducer": "sum"
+                }
+              }
+            },
+            {
               "id": "convertFieldType",
               "options": {
                 "conversions": [
                   {
                     "dateFormat": "X",
                     "destinationType": "time",
-                    "targetField": "Last seen"
+                    "targetField": "active_hosts_ipv4_last_seen"
                   }
                 ],
                 "fields": {}
               }
-            },
-            {
-              "id": "seriesToRows",
-              "options": {}
             },
             {
               "id": "organize",
@@ -6448,25 +5752,35 @@
                   "Last seen 2": false,
                   "Parent": true,
                   "Time": true,
+                  "active_hosts_ipv4_last_used": true,
                   "uid": true
                 },
                 "indexByName": {
-                  "IPv4": 3,
-                  "Info": 9,
-                  "Last seen": 6,
-                  "Last seen * 1000": 5,
-                  "Mac": 4,
-                  "Name": 2,
-                  "Port": 8,
-                  "Time": 0,
-                  "Type": 7,
-                  "uid": 1
+                  "active_hosts_additional_text": 7,
+                  "active_hosts_ipv4": 2,
+                  "active_hosts_ipv4_last_seen": 4,
+                  "active_hosts_ipv4_last_used": 9,
+                  "active_hosts_mac": 3,
+                  "active_hosts_name": 1,
+                  "active_hosts_parent": 8,
+                  "active_hosts_port": 6,
+                  "active_hosts_type": 5,
+                  "uid": 0
                 },
                 "renameByName": {
                   "Last seen": "",
                   "Last seen * 1000": "Last Seen",
                   "Last seen 2": "",
-                  "Type": ""
+                  "Type": "",
+                  "active_hosts_additional_text": "Info",
+                  "active_hosts_ipv4": "IPv4",
+                  "active_hosts_ipv4_last_seen": "Last seen",
+                  "active_hosts_ipv4_last_used": "",
+                  "active_hosts_mac": "Mac",
+                  "active_hosts_name": "Name",
+                  "active_hosts_parent": "Parent",
+                  "active_hosts_port": "Port",
+                  "active_hosts_type": "Type"
                 }
               }
             },
@@ -6497,7 +5811,8 @@
               },
               "custom": {
                 "align": "auto",
-                "displayMode": "auto"
+                "displayMode": "auto",
+                "inspect": false
               },
               "mappings": [],
               "thresholds": {
@@ -6519,7 +5834,7 @@
             "h": 17,
             "w": 24,
             "x": 0,
-            "y": 44
+            "y": 24
           },
           "id": 73,
           "options": {
@@ -6532,7 +5847,7 @@
             },
             "showHeader": true
           },
-          "pluginVersion": "8.4.4",
+          "pluginVersion": "9.1.6",
           "targets": [
             {
               "datasource": {
@@ -6550,6 +5865,7 @@
               "measurement": "/^$measurement$/",
               "orderByTime": "ASC",
               "policy": "default",
+              "query": "from(bucket: v.defaultBucket)\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field =~ /passive_hosts_.*/ )\n  |> last()\n  |> drop(columns: [\"box\", \"_measurement\", \"_start\", \"_stop\", \"_time\"])\n",
               "refId": "A",
               "resultFormat": "table",
               "select": [
@@ -6638,8 +5954,10 @@
           "title": "Passive Hosts",
           "transformations": [
             {
-              "id": "seriesToRows",
-              "options": {}
+              "id": "joinByLabels",
+              "options": {
+                "value": "_field"
+              }
             },
             {
               "id": "organize",
@@ -6650,18 +5968,18 @@
                   "uid": true
                 },
                 "indexByName": {
-                  "IPv4": 3,
-                  "Info": 8,
-                  "Last seen": 5,
-                  "Mac": 4,
-                  "Name": 2,
-                  "Parent": 9,
-                  "Port": 7,
-                  "Time": 0,
-                  "Type": 6,
-                  "uid": 1
+                  "passive_hosts_ipv4": 2,
+                  "passive_hosts_mac": 3,
+                  "passive_hosts_name": 1,
+                  "passive_hosts_port": 4,
+                  "uid": 0
                 },
-                "renameByName": {}
+                "renameByName": {
+                  "passive_hosts_ipv4": "IPv4",
+                  "passive_hosts_mac": "MAC",
+                  "passive_hosts_name": "Name",
+                  "passive_hosts_port": "Port"
+                }
               }
             },
             {
@@ -6684,7 +6002,7 @@
     }
   ],
   "refresh": "1m",
-  "schemaVersion": 35,
+  "schemaVersion": 37,
   "style": "dark",
   "tags": [],
   "templating": {
@@ -6711,39 +6029,39 @@
         ]
       },
       {
-        "hide": 2,
-        "label": "specify your timezone",
-        "name": "timezone",
-        "query": "${VAR_TIMEZONE}",
-        "skipUrlSync": false,
-        "type": "constant",
-        "current": {
-          "value": "${VAR_TIMEZONE}",
-          "text": "${VAR_TIMEZONE}",
-          "selected": false
-        },
-        "options": [
-          {
-            "value": "${VAR_TIMEZONE}",
-            "text": "${VAR_TIMEZONE}",
-            "selected": false
-          }
-        ]
-      },
-      {
         "current": {},
         "datasource": {
           "type": "influxdb",
           "uid": "${DS_INFLUXDB}"
         },
-        "definition": "SHOW TAG VALUES FROM $measurement WITH KEY=box",
+        "definition": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"$measurement\" and r._field == \"linkuptime\")\n  |> keyValues(keyColumns: [\"box\"])\n  |> group()\n  |> keep(columns: [\"box\"])\n  |> distinct(column: \"box\")",
         "hide": 0,
         "includeAll": false,
         "label": "FritzBox",
         "multi": false,
         "name": "boxtag",
         "options": [],
-        "query": "SHOW TAG VALUES FROM $measurement WITH KEY=box",
+        "query": "from(bucket: v.defaultBucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"$measurement\" and r._field == \"linkuptime\")\n  |> keyValues(keyColumns: [\"box\"])\n  |> group()\n  |> keep(columns: [\"box\"])\n  |> distinct(column: \"box\")",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "allValue": "",
+        "current": {},
+        "datasource": {
+          "type": "influxdb",
+          "uid": "${DS_INFLUXDB}"
+        },
+        "definition": "import \"sampledata\"\nimport \"date\"\n// generate default timezone entry\ndefault = sampledata.string()\n  |> map(fn: (r) => ({_value: \"Europe/Berlin\", _time: date.time(t: 1990-01-01) }))\n  |> last()\n\n// query actual entry\nquery = from(bucket: v.defaultBucket)\n  |> range(start: -2d)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field == \"fritzinfluxdb_setting_timezone\")\n  |> last()\n  |> keep(columns: [\"_time\", \"_value\"])\n\n// join result and keep the latest (query) result\nunion(tables: [default, query])\n  |> sort(columns: [\"_time\"], desc: false)\n  |> last()\n",
+        "hide": 2,
+        "includeAll": false,
+        "multi": false,
+        "name": "timezone",
+        "options": [],
+        "query": "import \"sampledata\"\nimport \"date\"\n// generate default timezone entry\ndefault = sampledata.string()\n  |> map(fn: (r) => ({_value: \"Europe/Berlin\", _time: date.time(t: 1990-01-01) }))\n  |> last()\n\n// query actual entry\nquery = from(bucket: v.defaultBucket)\n  |> range(start: -2d)\n  |> filter(fn: (r) => r._measurement == \"${measurement}\" and r.box == \"${boxtag}\" and r._field == \"fritzinfluxdb_setting_timezone\")\n  |> last()\n  |> keep(columns: [\"_time\", \"_value\"])\n\n// join result and keep the latest (query) result\nunion(tables: [default, query])\n  |> sort(columns: [\"_time\"], desc: false)\n  |> last()\n",
         "refresh": 1,
         "regex": "",
         "skipUrlSync": false,
@@ -6783,7 +6101,7 @@
   },
   "timezone": "",
   "title": "FRITZ!Box Router Status",
-  "uid": "FritzFlux",
-  "version": 65,
+  "uid": "fritzbox-system-flux",
+  "version": 5,
   "weekStart": ""
 }

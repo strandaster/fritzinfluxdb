@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+#  Copyright (c) 2022 - 2022 Ricardo Bartels. All rights reserved.
 #
 #  fritzinfluxdb.py
 #
@@ -16,6 +17,7 @@ writes it to an InfluxDB instance.
 import os
 import signal
 import asyncio
+import sys
 from http.client import HTTPConnection
 
 
@@ -23,10 +25,11 @@ from fritzinfluxdb.cli_parser import parse_command_line
 from fritzinfluxdb.log import setup_logging
 from fritzinfluxdb.configparser import import_config
 from fritzinfluxdb.classes.fritzbox.handler import FritzBoxHandler, FritzBoxLuaHandler
-from fritzinfluxdb.classes.influxdb.handler import InfluxHandler
+from fritzinfluxdb.classes.influxdb.handler import InfluxHandler, InfluxLogAndConfigWriter
 
-__version__ = "1.0.0_strandaster"
-__version_date__ = "2022-06-11"
+__version__ = "1.1.0_strandaster"
+__version_date__ = "2022-11-02"
+__author__ = "Ricardo Bartels <ricardo@bitchbrothers.com>"
 __description__ = "fritzinfluxdb"
 __license__ = "MIT"
 __url__ = "https://github.com/strandaster/fritzinfluxdb"
@@ -69,10 +72,16 @@ def handle_task_result(task: asyncio.Task) -> None:
 
 def main():
 
+    # check for correct python version
+    if sys.version_info[0] != 3 or sys.version_info[1] < 7:
+        print("Error: Python version 3.7 or higher required!", file=sys.stderr)
+        exit(1)
+
     # parse command line arguments
     args = parse_command_line(__version__, __description__, __version_date__, __url__, default_config)
 
-    log = setup_logging("DEBUG" if args.verbose > 0 else "INFO", args.daemon)
+    log_queue = asyncio.Queue()
+    log = setup_logging("DEBUG" if args.verbose > 0 else "INFO", args.daemon, log_queue)
 
     log.propagate = False
 
@@ -89,11 +98,13 @@ def main():
     influx_connection = InfluxHandler(config, user_agent=f"{__description__}/{__version__}")
     fritzbox_connection = FritzBoxHandler(config)
     fritzbox_lua_connection = FritzBoxLuaHandler(fritzbox_connection.config)
+    influx_log_writer = InfluxLogAndConfigWriter(fritzbox_connection.config, log_queue)
 
     handler_list = [
         influx_connection,
         fritzbox_connection,
-        fritzbox_lua_connection
+        fritzbox_lua_connection,
+        influx_log_writer
     ]
 
     for handler in handler_list:
@@ -122,8 +133,9 @@ def main():
     if init_errors is True:
         exit(1)
 
-    log.info(f"Successfully connected to FritzBox '{fritzbox_connection.config.hostname}' "
-             f"({fritzbox_connection.config.box_tag}) Model: {fritzbox_connection.config.model} - "
+    log.info(f"Successfully connected to "
+             f"FritzBox '{fritzbox_connection.config.hostname}' ({fritzbox_connection.config.box_tag}) "
+             f"Model: {fritzbox_connection.config.model} ({fritzbox_connection.config.link_type}) - "
              f"FW: {fritzbox_connection.config.fw_version}")
 
     loop = asyncio.get_event_loop()
@@ -138,7 +150,7 @@ def main():
 
     try:
         for handler in handler_list:
-            task = loop.create_task(handler.task_loop(queue), name=handler.name)
+            task = loop.create_task(handler.task_loop(queue))
             task.add_done_callback(handle_task_result)
         loop.run_forever()
     finally:

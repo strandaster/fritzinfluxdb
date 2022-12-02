@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+#  Copyright (c) 2022 - 2022 Ricardo Bartels. All rights reserved.
 #
 #  fritzinfluxdb.py
 #
@@ -6,7 +7,9 @@
 #  For a copy, see file LICENSE.txt included in this
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
-fritzbox_services = [
+from fritzinfluxdb.classes.fritzbox.service_definitions import tr069_services
+
+tr069_services.extend([
     {
         "name": "WANCommonIFC",
         "actions": [
@@ -87,6 +90,7 @@ fritzbox_services = [
             "GetStatisticsTotal",
             "X_AVM-DE_GetDSLInfo"
         ],
+        "link_type": "DSL",
         "value_instances": {
             "NewDownstreamMaxRate": "maxBitRate_downstream",
             "NewUpstreamMaxRate": "maxBitRate_upstream",
@@ -114,6 +118,7 @@ fritzbox_services = [
     {
         "name": "WANPPPConnection:1",
         "actions": ["GetInfo"],
+        "link_type": "DSL",
         "value_instances": {
             "NewExternalIPAddress": "external_ip",
             "NewLastAuthErrorInfo": "last_auth_error",
@@ -126,6 +131,7 @@ fritzbox_services = [
     {
         "name": "WANIPConnection:1",
         "actions": ["GetInfo"],
+        "link_type": "Cable",
         "value_instances": {
             "NewExternalIPAddress": "external_ip",
             "NewUptime": "linkuptime",
@@ -194,4 +200,4 @@ fritzbox_services = [
             "NewMode": "ddns_mode"
         }
     }
-]
+])

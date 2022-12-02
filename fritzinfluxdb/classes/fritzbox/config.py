@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+#  Copyright (c) 2022 - 2022 Ricardo Bartels. All rights reserved.
 #
 #  fritzinfluxdb.py
 #
@@ -74,6 +75,7 @@ class FritzBoxConfig(ConfigBase):
 
         self._fw_version = None
         self.model = None
+        self.link_type = None
 
     def parse_config(self, config_data: configparser.ConfigParser):
 

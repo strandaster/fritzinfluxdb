@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+#  Copyright (c) 2022 - 2022 Ricardo Bartels. All rights reserved.
 #
 #  fritzinfluxdb.py
 #
@@ -7,11 +8,11 @@
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
 import asyncio
+
 import urllib3
 import requests
 from xml.etree.ElementTree import fromstring
 import hashlib
-import json
 
 # import 3rd party modules
 from fritzconnection import FritzConnection
@@ -20,8 +21,7 @@ from fritzconnection.core.exceptions import FritzConnectionException, FritzServi
 from fritzinfluxdb.classes.fritzbox.config import FritzBoxConfig
 from fritzinfluxdb.log import get_logger
 from fritzinfluxdb.classes.fritzbox.service_handler import FritzBoxTR069Service, FritzBoxLuaService
-from fritzinfluxdb.classes.fritzbox.services_tr069 import fritzbox_services as tr069_services
-from fritzinfluxdb.classes.fritzbox.services_lua import fritzbox_services as lua_services
+import fritzinfluxdb.classes.fritzbox.service_definitions as service_definitions
 from fritzinfluxdb.classes.common import FritzMeasurement
 from fritzinfluxdb.common import grab
 
@@ -110,8 +110,7 @@ class FritzBoxHandler(FritzBoxHandlerBase):
 
         super().__init__(config)
 
-        # parse services from fritzbox/services_tr069.py
-        self.add_services(FritzBoxTR069Service, tr069_services)
+        self.add_services(FritzBoxTR069Service, service_definitions.tr069_services)
 
     def connect(self):
 
@@ -155,6 +154,14 @@ class FritzBoxHandler(FritzBoxHandlerBase):
             self.config.model = device_info.get("NewModelName")
             self.config.fw_version = device_info.get("NewSoftwareVersion")
 
+        # get link type (DSL or Cable)
+        # noinspection PyBroadException
+        try:
+            link_info = self.session.call_action("WANCommonIFC", "GetCommonLinkProperties")
+            self.config.link_type = link_info.get("NewWANAccessType")
+        except BaseException:
+            pass
+
         log.info(f"Successfully established {self.name} session")
 
         self.init_successful = True
@@ -165,6 +172,15 @@ class FritzBoxHandler(FritzBoxHandlerBase):
             log.info(f"Closed {self.name} connection")
 
     def query_service_data(self, service):
+
+        def service_invalid_log(log_message):
+            if service.link_type is not None and service.link_type is not self.config.link_type:
+                log_handler = log.debug
+                log_message += f" (only available on {service.link_type} connections)"
+            else:
+                log_handler = log.warning
+
+            log_handler(log_message)
 
         if not isinstance(service, FritzBoxTR069Service):
             log.error("Query service must be of type 'FritzBoxTR069Service'")
@@ -187,15 +203,15 @@ class FritzBoxHandler(FritzBoxHandlerBase):
             try:
                 call_result = self.session.call_action(service.name, action.name, **action.params)
             except FritzServiceError:
-                log.info(f"Requested invalid service: {service.name}")
+                service_invalid_log(f"Requested invalid service: {service.name}")
                 if self.discovery_done is False:
-                    log.info(f"Querying service '{service.name}' will be disabled")
+                    service_invalid_log(f"Querying service '{service.name}' will be disabled")
                     service.available = False
                 continue
             except FritzActionError:
-                log.info(f"Requested invalid action '{action.name}' for service: {service.name}")
+                service_invalid_log(f"Requested invalid action '{action.name}' for service: {service.name}")
                 if self.discovery_done is False:
-                    log.info(f"Querying action '{action.name}' will be disabled")
+                    service_invalid_log(f"Querying action '{action.name}' will be disabled")
                     action.available = False
                 continue
             except FritzConnectionException as e:
@@ -212,8 +228,10 @@ class FritzBoxHandler(FritzBoxHandlerBase):
             if call_result is None:
                 continue
 
-            log.debug(f"Request {self.name} service '{service.name}' returned successfully: "
-                      f"{action.name} ({action.params})")
+            debug_msg = f"Request {self.name} service '{service.name}' returned successfully: {action.name}"
+            if len(action.params) > 0:
+                debug_msg += f" ({action.params})"
+            log.debug(debug_msg)
 
             # set time stamp of this query
             service.set_last_query_now()
@@ -224,12 +242,12 @@ class FritzBoxHandler(FritzBoxHandlerBase):
 
                 if metric_name is not None:
                     self.current_result_list.append(
-                        FritzMeasurement(metric_name, value, self.config.box_tag)
+                        FritzMeasurement(metric_name, value, box_tag=self.config.box_tag)
                     )
 
         if self.discovery_done is False:
             if True not in [x.available for x in service.actions]:
-                log.info(f"All actions for service '{service.name}' are unavailable. Disabling service.")
+                service_invalid_log(f"All actions for service '{service.name}' are unavailable. Disabling service.")
                 service.available = False
 
         return
@@ -258,8 +276,7 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
         self.session = requests.Session()
         self.session.verify = self.config.verify_tls
 
-        # parse services from fritzbox/services_lua.py
-        self.add_services(FritzBoxLuaService, lua_services)
+        self.add_services(FritzBoxLuaService, service_definitions.lua_services)
 
     def connect(self):
 
@@ -316,33 +333,52 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
         self.sid = sid
         self.init_successful = True
 
-    def request(self, page, additional_params):
-
-        result = None
+    def request(self, service_to_request, additional_params):
 
         if self.sid is None:
             self.connect()
 
         params = {
-            "page": page,
-            "lang": "de",
             "sid": self.sid
         }
 
+        # appending additional params
         if isinstance(additional_params, dict):
             params = {**params, **additional_params}
 
-        data_url = f"{self.url}/data.lua"
+        # basic function call attributes
+        call_attributes = {
+            "timeout": self.config.connect_timeout
+        }
+
+        if service_to_request.method == "POST":
+            call_attributes["data"] = params
+        else:
+            call_attributes["params"] = params
+
+        data_url = f"{self.url}{service_to_request.url_path}"
+
+        # perform request
         try:
-            response = self.session.post(data_url, timeout=self.config.connect_timeout, data=params)
+            response = self.session.request(service_to_request.method, data_url, **call_attributes)
         except Exception as e:
             log.error(f"Unable to perform request to '{data_url}': {e}")
             return
 
+        # check for invalid session
+        if "<html" in f"{response.content}"[0:100]:
+            self.sid = None
+            return
+
+        # noinspection PyBroadException
         try:
-            result = response.json()
-        except json.decoder.JSONDecodeError:
-            pass
+            result = service_to_request.response_parser(response)
+        except Exception as e:
+            log.error(f"{self.name} request parsing for '{service_to_request.name}' failed: {e}")
+            return
+
+        # Debugging purposes
+        # log.debug(f"Response: {response.content}")
 
         if response.status_code == 200 and result is not None:
             log.debug(f"{self.name} request successful")
@@ -400,7 +436,7 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
                 pass
 
         elif data_path is not None:
-            metric_value = grab(data, data_path)
+            metric_value = grab(data, data_path, fallback="" if data_type is str else None)
 
         # try to add tags
         if isinstance(data_tags, dict):
@@ -424,7 +460,7 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
             pass
 
         if metric_value is None:
-            log.error(f"Unable to extract '{data_path}' form '{data}', got '{type(metric_value)}'")
+            log.error(f"Unable to extract '{metric_name}' form '{data}', got '{type(metric_value)}'")
             return
 
         if data_type in [int, float, bool, str]:
@@ -433,8 +469,8 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
             except Exception as e:
                 log.error(f"Unable to convert {self.name} value '{metric_value}' to '{data_type}': {e}")
 
-            metric = FritzMeasurement(metric_name, metric_value, self.config.box_tag, additional_tags=metric_tags,
-                                      timestamp=timestamp)
+            metric = FritzMeasurement(metric_name, metric_value, data_type=data_type, box_tag=self.config.box_tag,
+                                      additional_tags=metric_tags, timestamp=timestamp)
 
             # check if measurement is tracked and already reported
             if service.skip_tracked_measurement(metric) is True:
@@ -474,10 +510,16 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
         if self.discovery_done is True and service.should_be_requested() is False:
             return
 
-        # request data
-        result = self.request(service.page, additional_params=service.params)
+        if self.discovery_done is False and self.config.fw_version not in service.os_versions:
+            log.debug(f"FritzOS version {self.config.fw_version} not in list "
+                      f"of supported versions for {service.name}: {service.os_versions}")
+            service.available = False
+            return
 
-        if result is None or result.get("pid") != service.page:
+        # request data
+        result = self.request(service, additional_params=service.params)
+
+        if result is None:
             message_handler = log.info
             message_text = f"Unable to request {self.name} service '{service.name}'"
             if result is None:
