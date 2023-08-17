@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-#  Copyright (c) 2022 - 2022 Ricardo Bartels. All rights reserved.
+#  Copyright (c) 2022 - 2023 Ricardo Bartels. All rights reserved.
 #
 #  fritzinfluxdb.py
 #
@@ -24,6 +24,7 @@ from fritzinfluxdb.classes.fritzbox.service_handler import FritzBoxTR069Service,
 import fritzinfluxdb.classes.fritzbox.service_definitions as service_definitions
 from fritzinfluxdb.classes.common import FritzMeasurement
 from fritzinfluxdb.common import grab
+from fritzinfluxdb.classes.fritzbox.model import FritzBoxModel
 
 log = get_logger()
 
@@ -73,7 +74,7 @@ class FritzBoxHandlerBase:
             self.services.append(new_service)
 
     def query_service_data(self, _):
-        # dummy service to make IDE happy
+        # stub for the default function
         pass
 
     async def task_loop(self, queue):
@@ -154,11 +155,12 @@ class FritzBoxHandler(FritzBoxHandlerBase):
             self.config.model = device_info.get("NewModelName")
             self.config.fw_version = device_info.get("NewSoftwareVersion")
 
-        # get link type (DSL or Cable)
+        # get link type
         # noinspection PyBroadException
         try:
             link_info = self.session.call_action("WANCommonIFC", "GetCommonLinkProperties")
-            self.config.link_type = link_info.get("NewWANAccessType")
+            link_type = FritzBoxModel.get_link_type(self.config.model, link_info.get("NewWANAccessType"))
+            self.config.link_type = link_type
         except BaseException:
             pass
 
@@ -218,6 +220,9 @@ class FritzBoxHandler(FritzBoxHandlerBase):
                 if "401" in str(e):
                     log.error(f"Failed to connect to {self.name} '{self.config.hostname}' using credentials. "
                               "Check username and password!")
+                elif "820" in str(e) and self.discovery_done is False:
+                    service_invalid_log(f"Querying action '{action.name}' will be disabled")
+                    action.available = False
                 else:
                     log.error(f"Failed to connect to {self.name} '{self.config.hostname}': {e}")
                 continue
@@ -241,9 +246,32 @@ class FritzBoxHandler(FritzBoxHandlerBase):
                 metric_name = service.value_instances.get(key)
 
                 if metric_name is not None:
+
+                    data_type = None
+
+                    # support setting a data type by appending it to the metric name by a double colon
+                    if ":" in metric_name:
+                        metric_data_type = metric_name.split(":")[1]
+                        metric_name = metric_name.split(":")[0]
+
+                        data_type = {
+                            "str": str,
+                            "int": int,
+                            "float": float,
+                            "bool": bool
+                        }.get(metric_data_type)
+
+                        if data_type is None:
+                            log.warning(f"Unknown data type '{metric_data_type}' for metric '{key}' "
+                                        f"in service '{service.name}'")
+
                     self.current_result_list.append(
-                        FritzMeasurement(metric_name, value, box_tag=self.config.box_tag)
+                        FritzMeasurement(metric_name, value, box_tag=self.config.box_tag, data_type=data_type)
                     )
+
+            # special case: update firmware version when requested
+            if service.name == "DeviceInfo" and action.name == "GetInfo":
+                self.config.fw_version = call_result.get("NewSoftwareVersion", "154.7.50")
 
         if self.discovery_done is False:
             if True not in [x.available for x in service.actions]:
@@ -319,8 +347,14 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
         try:
             response = self.session.get(login_url, timeout=self.config.connect_timeout, params=login_params)
             sid = fromstring(response.content).findtext('./SID')
+            block_time = fromstring(response.content).findtext('./BlockTime')
         except Exception as e:
             log.error(f"Unable to parse {self.name} login response: {e} {response.content}")
+            return
+
+        if block_time != "0":
+            log.error(f"Failed to connect to {self.name} '{self.config.hostname}'. "
+                      f"Logins blocked for '{block_time}' seconds!")
             return
 
         if sid == "0000000000000000":
@@ -467,7 +501,8 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
             try:
                 metric_value = data_type(metric_value)
             except Exception as e:
-                log.error(f"Unable to convert {self.name} value '{metric_value}' to '{data_type}': {e}")
+                log.error(f"Unable to convert {self.name} value '{metric_value}' "
+                          f"for '{metric_name}' to '{data_type}': {e}")
 
             metric = FritzMeasurement(metric_name, metric_value, data_type=data_type, box_tag=self.config.box_tag,
                                       additional_tags=metric_tags, timestamp=timestamp)
@@ -483,7 +518,8 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
             return
 
         if type(metric_value) != data_type:
-            log.error(f"FritzBox metric type '{data_type}' does not match data: {type(metric_value)}")
+            log.error(f"FritzBox metric type '{data_type}' for '{metric_name}' "
+                      f"does not match '{type(metric_value)}' data: {metric_value}")
             return
 
         if data_type == list and data_next is not None:
@@ -510,11 +546,21 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
         if self.discovery_done is True and service.should_be_requested() is False:
             return
 
-        if self.discovery_done is False and self.config.fw_version not in service.os_versions:
-            log.debug(f"FritzOS version {self.config.fw_version} not in list "
-                      f"of supported versions for {service.name}: {service.os_versions}")
-            service.available = False
-            return
+        service_and_version_name = f"{service.name} " \
+                                   f"(Fritz!OS {service.os_min_versions} - {service.os_max_versions or 'latest'})"
+        if self.discovery_done is False:
+            if service.os_version_match(self.config.fw_version) is False:
+                log.debug(f"FritzOS version {self.config.fw_version} not compatible with "
+                          f"supported versions for '{service.name}': "
+                          f"{service.os_min_versions} - {service.os_max_versions or 'latest'}")
+                service.available = False
+                return
+
+            if service.link_type is not None and self.config.link_type != service.link_type:
+                log.info(f"Service '{service_and_version_name}' not applicable for this "
+                         f"FritzBox Model Link type '{self.config.link_type}'")
+                service.available = False
+                return
 
         # request data
         result = self.request(service, additional_params=service.params)
@@ -531,11 +577,11 @@ class FritzBoxLuaHandler(FritzBoxHandlerBase):
             message_handler(message_text)
 
             if self.discovery_done is False:
-                log.info(f"{self.name} service '{service.name}' will be disabled.")
+                log.info(f"{self.name} service '{service_and_version_name}' will be disabled.")
                 service.available = False
             return
 
-        log.debug(f"Request {self.name} service '{service.name}' returned successfully")
+        log.debug(f"Request {self.name} service '{service_and_version_name}' returned successfully")
 
         # set time stamp of this query
         service.set_last_query_now()

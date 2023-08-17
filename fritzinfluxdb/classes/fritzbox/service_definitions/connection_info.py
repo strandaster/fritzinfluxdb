@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-#  Copyright (c) 2022 - 2022 Ricardo Bartels. All rights reserved.
+#  Copyright (c) 2022 - 2023 Ricardo Bartels. All rights reserved.
 #
 #  fritzinfluxdb.py
 #
@@ -9,6 +9,7 @@
 
 from fritzinfluxdb.common import grab
 from fritzinfluxdb.classes.fritzbox.service_definitions import lua_services
+from fritzinfluxdb.classes.fritzbox.model import FritzBoxLinkTypes
 
 
 def prepare_json_response_data(response):
@@ -21,11 +22,7 @@ def prepare_json_response_data(response):
 
 lua_services.append({
         "name": "DSL Info",
-        "os_versions": [
-            "7.29",
-            "7.30",
-            "7.31"
-        ],
+        "os_min_versions": "7.29",
         "method": "POST",
         "params": {
             "page": "dslOv",
@@ -33,6 +30,7 @@ lua_services.append({
             "xhr": 1,
             "useajax": 1
         },
+        "link_type": FritzBoxLinkTypes.DSL,
         "response_parser": prepare_json_response_data,
         "interval": 600,
         "value_instances": {
@@ -58,19 +56,14 @@ lua_services.append({
 
 lua_services.append({
         "name": "Cable Info",
-        "os_versions": [
-            "7.29",
-            "7.30",
-            "7.31",
-            "7.39",
-            "7.50"
-        ],
+        "os_min_versions": "7.29",
         "method": "POST",
         "params": {
             "page": "docOv",
             "xhrId": "all",
             "xhr": 1
         },
+        "link_type": FritzBoxLinkTypes.Cable,
         "response_parser": prepare_json_response_data,
         "interval": 600,
         "value_instances": {

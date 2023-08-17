@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-#  Copyright (c) 2022 - 2022 Ricardo Bartels. All rights reserved.
+#  Copyright (c) 2022 - 2023 Ricardo Bartels. All rights reserved.
 #
 #  fritzinfluxdb.py
 #
@@ -13,11 +13,6 @@ from fritzinfluxdb.log import get_logger
 from fritzinfluxdb.classes.common import ConfigBase
 
 log = get_logger()
-
-sensitive_keys = [
-    "token",
-    "password"
-]
 
 
 class InfluxDBConfig(ConfigBase):
@@ -94,7 +89,12 @@ class InfluxDBConfig(ConfigBase):
         # validate data
         mandatory_keys = list()
         if self.version == 1:
-            mandatory_keys = ["hostname", "username", "password", "database"]
+            mandatory_keys = ["hostname", "database"]
+
+            if [getattr(self, "username"), getattr(self, "password")].count(None) == 1:
+                log.error(f"Username and password must be defined together or not at all for InfluxDB '{self.version}'")
+                self.parser_error = True
+
         elif self.version == 2:
             mandatory_keys = ["hostname", "token", "organisation", "bucket"]
         else:

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-#  Copyright (c) 2022 - 2022 Ricardo Bartels. All rights reserved.
+#  Copyright (c) 2022 - 2023 Ricardo Bartels. All rights reserved.
 #
 #  fritzinfluxdb.py
 #
@@ -203,15 +203,18 @@ class InfluxHandler:
             log.debug(f"InfluxDB database '{self.config.database}' exists")
 
         retention_policies = list()
+        retention_policies_query_successful = False
         try:
             retention_policies = self.session_v1.get_list_retention_policies(self.config.database)
+            retention_policies_query_successful = True
         except Exception as e:
-            log.warning(f"Problem querying database retention policy: {e}")
+            log.warning(f"Problem querying database retention policies: {e}")
 
-        if "1year" not in [x.get("name") for x in retention_policies]:
+        if retention_policies_query_successful and len(retention_policies) == 0:
             try:
                 self.session_v1.create_retention_policy(
-                    name="1year", duration=f"{self.config.data_retention_days}d", replication="1",
+                    name=f"fritzinfluxdb-{self.config.data_retention_days}-days",
+                    duration=f"{self.config.data_retention_days}d", replication="1",
                     database=self.config.database, shard_duration="24h", default=True
                 )
             except Exception as e:
@@ -371,8 +374,19 @@ class InfluxHandler:
                 write_successful = True
         except (ApiException, InfluxDBClientError) as e:
 
-            if (isinstance(e, ApiException) and e.status == 422) or \
-                    (isinstance(e, InfluxDBClientError) and "points beyond retention policy" in f"{e}"):
+            exception_message = None
+            http_code = 0
+            if isinstance(e, ApiException):
+                http_code = e.status
+                exception_message = e.message
+            if isinstance(e, InfluxDBClientError):
+                http_code = e.code
+                exception_message = e.content
+
+            if exception_message is None:
+                exception_message = str(e)
+
+            if "points beyond retention policy" in f"{exception_message}":
 
                 log.debug("InfluxDB refused to write data as there seems to be measurements "
                           "which are older then the defined retention period")
@@ -386,11 +400,14 @@ class InfluxHandler:
                     num_purged = len([x for x in self.buffer if x.timestamp <= newest_measurement.timestamp])
                     log.info(f"Purging '{num_purged}' measurements which are older ({newest_measurement.timestamp}) "
                              f"then the InfluxDB configured retention period")
+                    for entry in self.buffer:
+                        if entry.timestamp <= newest_measurement.timestamp:
+                            log.debug(f"Dropped measurement: {entry}")
                     self.buffer[:] = [x for x in self.buffer if x.timestamp > newest_measurement.timestamp]
                 else:
                     self.set_num_current_measurements_to_write(int(self.current_measurements_per_write/2))
             else:
-                log.error(f"Failed to write to InfluxDB '{self.config.hostname}': {e}")
+                log.error(f"Failed to write to InfluxDB '{self.config.hostname}': {http_code}: {exception_message}")
 
         except Exception as e:
             self.connection_lost = True
@@ -413,7 +430,7 @@ class InfluxHandler:
             self.current_retry_interval = self.retry_interval
 
             self.out_of_retention_period_range = False
-            self.set_num_current_measurements_to_write(self.current_measurements_per_write * 2)
+            self.set_num_current_measurements_to_write(self.current_measurements_per_write * 4)
 
         else:
             if self.connection_lost is True:

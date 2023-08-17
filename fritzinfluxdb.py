@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-#  Copyright (c) 2022 - 2022 Ricardo Bartels. All rights reserved.
+#  Copyright (c) 2022 - 2023 Ricardo Bartels. All rights reserved.
 #
 #  fritzinfluxdb.py
 #
@@ -27,8 +27,8 @@ from fritzinfluxdb.configparser import import_config
 from fritzinfluxdb.classes.fritzbox.handler import FritzBoxHandler, FritzBoxLuaHandler
 from fritzinfluxdb.classes.influxdb.handler import InfluxHandler, InfluxLogAndConfigWriter
 
-__version__ = "1.1.0_strandaster"
-__version_date__ = "2022-11-02"
+__version__ = "1.2.1_strandaster"
+__version_date__ = "2023-01-26"
 __author__ = "Ricardo Bartels <ricardo@bitchbrothers.com>"
 __description__ = "fritzinfluxdb"
 __license__ = "MIT"

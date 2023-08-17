@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-#  Copyright (c) 2022 - 2022 Ricardo Bartels. All rights reserved.
+#  Copyright (c) 2022 - 2023 Ricardo Bartels. All rights reserved.
 #
 #  fritzinfluxdb.py
 #
@@ -23,13 +23,7 @@ def prepare_json_response_data(response):
 lua_services.append(
     {
         "name": "System Stats",
-        "os_versions": [
-            "7.29",
-            "7.30",
-            "7.31",
-            "7.39",
-            "7.50"
-        ],
+        "os_min_versions": "7.29",
         "method": "POST",
         "params": {
             "page": "ecoStat",
@@ -64,13 +58,7 @@ lua_services.append(
 lua_services.append(
     {
         "name": "Energy Stats",
-        "os_versions": [
-            "7.29",
-            "7.30",
-            "7.31",
-            "7.39",
-            "7.50"
-        ],
+        "os_min_versions": "7.29",
         "method": "POST",
         "params": {
             "page": "energy",
