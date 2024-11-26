@@ -19,25 +19,25 @@ hash_cache = dict()
 read_interval = 60
 
 
-def get_hash(data):
+class CallLogConfig:
+
+    def __init__(self, sep, header):
+
+        self.sep = ";"
+        self.header_list = list()
+
+        if len(sep) > 0:
+            self.sep = sep
+
+        if len(header) > 0:
+            self.header_list = [x.strip('"') for x in header.split(self.sep)]
+
+
+class CallLogEntry:
     """
-    compute a MD5 hash and use as ID to track and group log data by uid tag
+    parse a single call log entry
+    maps columns to be backwards compatible
     """
-
-    hit = hash_cache.get(data)
-    if hit is not None:
-        return hit
-
-    hash_cache[data] = hashlib.md5(data.encode("UTF-8")).hexdigest()
-
-    return hash_cache.get(data)
-
-
-def get_date(data):
-    return datetime.strptime(data.split(";")[1], '%d.%m.%y %H:%M')
-
-
-def get_call_type(data):
 
     call_types = {
         "1": "incoming",
@@ -46,37 +46,116 @@ def get_call_type(data):
         "4": "outgoing"
     }
 
-    return call_types.get(data.split(";")[0], "undefined")
+    def __init__(self, entry: str, config: CallLogConfig):
+
+        # compute a MD5 hash and use as ID to track and group log data by uid tag
+        self._hash = hashlib.md5(entry.encode("UTF-8")).hexdigest()
+
+        entry_dict = dict(zip(config.header_list, entry.split(config.sep)))
+
+        self._call_type = self.call_types.get(entry_dict.get("Typ"), "undefined")
+        self._date_time = datetime.strptime(entry_dict.get("Datum"), '%d.%m.%y %H:%M')
+        self._caller_name = entry_dict.get("Name", "")
+        self._caller_number = entry_dict.get("Rufnummer", "")
+        self._caller_location = entry_dict.get("Landes-/Ortsnetzbereich", "")
+        self._extension = entry_dict.get("Nebenstelle", "")
+        self._number_called = entry_dict.get("Eigene Rufnummer", "")
+        self._duration = self.get_call_duration(entry_dict.get("Dauer"))
+
+    @staticmethod
+    def get_call_duration(field) -> int:
+        """
+        returns call duration in minutes
+        """
+
+        # noinspection PyBroadException
+        try:
+            hours, minutes = field.split(":")
+            duration = int(hours) * 60 + int(minutes)
+        except Exception:
+            duration = 0
+
+        return duration
+
+    @property
+    def hash(self) -> str:
+        return self._hash
+
+    @property
+    def type(self) -> str:
+        return self._call_type
+
+    @property
+    def date_time(self) -> datetime:
+        return self._date_time
+
+    @property
+    def caller_name(self) -> str:
+        return self._caller_name.strip('"')
+
+    @property
+    def caller_number(self) -> str:
+        return self._caller_number.strip('"')
+
+    @property
+    def caller_location(self) -> str:
+        return self._caller_location.strip('"')
+
+    @property
+    def extension(self) -> str:
+        return self._extension.strip('"')
+
+    @property
+    def number_called(self) -> str:
+        return self._number_called.strip('"')
+
+    @property
+    def duration(self) -> int:
+        return self._duration
 
 
-def get_call_duration(data):
+class CallLog:
     """
-    returns call duration in minutes
+    Parse FritzBox call log entries csv list
+    extracts separator and header, parses each line with given seperator
     """
 
-    # noinspection PyBroadException
-    try:
-        hours, minutes = data.split(";")[6].split(":")
-        duration = int(hours) * 60 + int(minutes)
-    except Exception:
-        return 0
+    new_line_char = "\n"
 
-    return duration
+    def __init__(self, data):
 
+        self.entries = list()
+        if not isinstance(data, str):
+            return
 
-def prepare_response_data(response):
-    """
-    handler to prepare returned data for parsing
-    """
+        lines = data.split(self.new_line_char)
 
-    # exclude from csv output
-    filter_strings = [
-        'sep=;',
-        'Typ;Datum;Name;Rufnummer;Nebenstelle;Eigene Rufnummer;Dauer',
-        ''
-    ]
+        if len(lines) == 0:
+            return
 
-    return [x for x in response.text.split("\n") if x not in filter_strings]
+        sep = ""
+        header = ""
+
+        # extract separator
+        if lines[0].startswith("sep="):
+            sep = lines[0].split("=")[-1]
+            lines = lines[1:]
+
+        # extract header
+        if lines[0].strip('"').startswith("Typ"):
+            header = lines[0]
+            lines = lines[1:]
+
+        config = CallLogConfig(sep, header)
+
+        if len(config.header_list) == 0:
+            return
+
+        for line in lines:
+            if len(line) == 0:
+                continue
+
+            self.entries.append(CallLogEntry(line, config))
 
 
 # due to the tracking of measurements multiple short calls from the same number within the same minute
@@ -91,7 +170,7 @@ lua_services.append(
             "switchcmd": "getdevicelistinfos",
             "csv": "",
         },
-        "response_parser": prepare_response_data,
+        "response_parser": lambda response: CallLog(response.text).entries,
         "interval": read_interval,
         "track": True,
         "value_instances": {
@@ -100,9 +179,9 @@ lua_services.append(
                 "value_function": lambda data: data,
                 "next": {
                     "type": str,
-                    "tags_function": lambda data: {"uid": get_hash(data)},
-                    "value_function": get_call_type,
-                    "timestamp_function": get_date,
+                    "tags_function": lambda entry: {"uid": entry.hash},
+                    "value_function": lambda entry: entry.type,
+                    "timestamp_function": lambda entry: entry.date_time,
                 }
             },
             "call_list_caller_name": {
@@ -110,9 +189,9 @@ lua_services.append(
                 "value_function": lambda data: data,
                 "next": {
                     "type": str,
-                    "tags_function": lambda data: {"uid": get_hash(data)},
-                    "value_function": lambda data: data.split(";")[2],
-                    "timestamp_function": get_date,
+                    "tags_function": lambda entry: {"uid": entry.hash},
+                    "value_function": lambda entry: entry.caller_name,
+                    "timestamp_function": lambda entry: entry.date_time,
                 }
             },
             "call_list_caller_number": {
@@ -120,9 +199,19 @@ lua_services.append(
                 "value_function": lambda data: data,
                 "next": {
                     "type": str,
-                    "tags_function": lambda data: {"uid": get_hash(data)},
-                    "value_function": lambda data: data.split(";")[3],
-                    "timestamp_function": get_date,
+                    "tags_function": lambda entry: {"uid": entry.hash},
+                    "value_function": lambda entry: entry.caller_number,
+                    "timestamp_function": lambda entry: entry.date_time,
+                }
+            },
+            "call_list_caller_location": {
+                "type": list,
+                "value_function": lambda data: data,
+                "next": {
+                    "type": str,
+                    "tags_function": lambda entry: {"uid": entry.hash},
+                    "value_function": lambda entry: entry.caller_location,
+                    "timestamp_function": lambda entry: entry.date_time,
                 }
             },
             "call_list_extension": {
@@ -130,9 +219,9 @@ lua_services.append(
                 "value_function": lambda data: data,
                 "next": {
                     "type": str,
-                    "tags_function": lambda data: {"uid": get_hash(data)},
-                    "value_function": lambda data: data.split(";")[4],
-                    "timestamp_function": get_date,
+                    "tags_function": lambda entry: {"uid": entry.hash},
+                    "value_function": lambda entry: entry.extension,
+                    "timestamp_function": lambda entry: entry.date_time,
                 }
             },
             "call_list_number_called": {
@@ -140,9 +229,9 @@ lua_services.append(
                 "value_function": lambda data: data,
                 "next": {
                     "type": str,
-                    "tags_function": lambda data: {"uid": get_hash(data)},
-                    "value_function": lambda data: data.split(";")[5],
-                    "timestamp_function": get_date,
+                    "tags_function": lambda entry: {"uid": entry.hash},
+                    "value_function": lambda entry: entry.number_called,
+                    "timestamp_function": lambda entry: entry.date_time,
                 }
             },
             "call_list_duration": {
@@ -150,11 +239,11 @@ lua_services.append(
                 "value_function": lambda data: data,
                 "next": {
                     "type": int,
-                    "tags_function": lambda data: {"uid": get_hash(data)},
-                    "value_function": get_call_duration,
-                    "timestamp_function": get_date,
+                    "tags_function": lambda entry: {"uid": entry.hash},
+                    "value_function": lambda entry: entry.duration,
+                    "timestamp_function": lambda entry: entry.date_time,
                 }
-            },
+            }
         }
     }
 )

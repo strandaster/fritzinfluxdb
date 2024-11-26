@@ -19,6 +19,14 @@ def prepare_json_response_data(response):
 
     return response.json()
 
+def exclude_filter_docsis30(data):
+
+    return "docsis30" not in grab(data, "data.channelDs", fallback={}).keys()
+
+
+def exclude_filter_docsis31(data):
+    return "docsis31" not in grab(data, "data.channelDs", fallback={}).keys()
+
 
 lua_services.append({
         "name": "DSL Info",
@@ -93,6 +101,497 @@ lua_services.append({
                                                              fallback=dict()).values()])
                                    ),
             }
+        }
+    }
+)
+
+lua_services.append({
+        "name": "Cable Channel Info",
+        "os_min_versions": "7.29",
+        "os_max_versions": "7.57",
+        "method": "POST",
+        "params": {
+            "page": "docInfo",
+            "xhrId": "all",
+            "xhr": 1
+        },
+        "link_type": FritzBoxLinkTypes.Cable,
+        "response_parser": prepare_json_response_data,
+        "value_instances": {
+            "cable_channel_ds_docsis31_type": {
+                "data_path": "data.channelDs.docsis31",
+                "type": list,
+                "next": {
+                    "type": str,
+                    "value_function": lambda data: data.get("type"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis31
+            },
+            "cable_channel_ds_docsis31_power_level": {
+                "data_path": "data.channelDs.docsis31",
+                "type": list,
+                "next": {
+                    "type": str,
+                    "value_function": lambda data: data.get("powerLevel"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis31
+            },
+            "cable_channel_ds_docsis31_channel": {
+                "data_path": "data.channelDs.docsis31",
+                "type": list,
+                "next": {
+                    "type": int,
+                    "value_function": lambda data: data.get("channel"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis31
+            },
+            "cable_channel_ds_docsis31_frequency": {
+                "data_path": "data.channelDs.docsis31",
+                "type": list,
+                "next": {
+                    "type": str,
+                    "value_function": lambda data: data.get("frequency"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis31
+            },
+            "cable_channel_ds_docsis30_type": {
+                "data_path": "data.channelDs.docsis30",
+                "type": list,
+                "next": {
+                    "type": str,
+                    "value_function": lambda data: data.get("type"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis30
+            },
+            "cable_channel_ds_docsis30_power_level": {
+                "data_path": "data.channelDs.docsis30",
+                "type": list,
+                "next": {
+                    "type": str,
+                    "value_function": lambda data: data.get("powerLevel"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis30
+            },
+            "cable_channel_ds_docsis30_channel": {
+                "data_path": "data.channelDs.docsis30",
+                "type": list,
+                "next": {
+                    "type": int,
+                    "value_function": lambda data: data.get("channel"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis30
+            },
+            "cable_channel_ds_docsis30_frequency": {
+                "data_path": "data.channelDs.docsis30",
+                "type": list,
+                "next": {
+                    "type": str,
+                    "value_function": lambda data: data.get("frequency"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis30
+            },
+            "cable_channel_ds_docsis30_latency": {
+                "data_path": "data.channelDs.docsis30",
+                "type": list,
+                "next": {
+                    "type": float,
+                    "value_function": lambda data: data.get("latency"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis30
+            },
+            "cable_channel_ds_docsis30_mse": {
+                "data_path": "data.channelDs.docsis30",
+                "type": list,
+                "next": {
+                    "type": float,
+                    "value_function": lambda data: data.get("mse"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis30
+            },
+            "cable_channel_ds_docsis30_corrected_errors": {
+                "data_path": "data.channelDs.docsis30",
+                "type": list,
+                "next": {
+                    "type": int,
+                    "value_function": lambda data: data.get("corrErrors"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis30
+            },
+            "cable_channel_ds_docsis30_non_corrected_errors": {
+                "data_path": "data.channelDs.docsis30",
+                "type": list,
+                "next": {
+                    "type": int,
+                    "value_function": lambda data: data.get("nonCorrErrors"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis30
+            },
+            "cable_channel_us_docsis31_type": {
+                "data_path": "data.channelUs.docsis31",
+                "type": list,
+                "next": {
+                    "type": str,
+                    "value_function": lambda data: data.get("type"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis31
+            },
+            "cable_channel_us_docsis31_power_level": {
+                "data_path": "data.channelUs.docsis31",
+                "type": list,
+                "next": {
+                    "type": str,
+                    "value_function": lambda data: data.get("powerLevel"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis31
+            },
+            "cable_channel_us_docsis31_channel": {
+                "data_path": "data.channelUs.docsis31",
+                "type": list,
+                "next": {
+                    "type": int,
+                    "value_function": lambda data: data.get("channel"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis31
+            },
+            "cable_channel_us_docsis31_frequency": {
+                "data_path": "data.channelUs.docsis31",
+                "type": list,
+                "next": {
+                    "type": str,
+                    "value_function": lambda data: data.get("frequency"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis31
+            },
+            "cable_channel_us_docsis31_multiplex": {
+                "data_path": "data.channelUs.docsis31",
+                "type": list,
+                "next": {
+                    "type": str,
+                    "value_function": lambda data: data.get("multiplex"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis31
+            },
+            "cable_channel_us_docsis30_type": {
+                "data_path": "data.channelUs.docsis30",
+                "type": list,
+                "next": {
+                    "type": str,
+                    "value_function": lambda data: data.get("type"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis30
+            },
+            "cable_channel_us_docsis30_power_level": {
+                "data_path": "data.channelUs.docsis30",
+                "type": list,
+                "next": {
+                    "type": str,
+                    "value_function": lambda data: data.get("powerLevel"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis30
+            },
+            "cable_channel_us_docsis30_channel": {
+                "data_path": "data.channelUs.docsis30",
+                "type": list,
+                "next": {
+                    "type": int,
+                    "value_function": lambda data: data.get("channel"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis30
+            },
+            "cable_channel_us_docsis30_frequency": {
+                "data_path": "data.channelUs.docsis30",
+                "type": list,
+                "next": {
+                    "type": str,
+                    "value_function": lambda data: data.get("frequency"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis30
+            },
+            "cable_channel_us_docsis30_multiplex": {
+                "data_path": "data.channelUs.docsis30",
+                "type": list,
+                "next": {
+                    "type": str,
+                    "value_function": lambda data: data.get("multiplex"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis30
+            },
+        }
+    }
+)
+
+lua_services.append({
+        "name": "Cable Channel Info",
+        "os_min_versions": "7.58",
+        "method": "POST",
+        "params": {
+            "page": "docInfo",
+            "xhrId": "all",
+            "xhr": 1
+        },
+        "link_type": FritzBoxLinkTypes.Cable,
+        "response_parser": prepare_json_response_data,
+        "value_instances": {
+
+            # DOCSIS 3.1 down stream
+            "cable_channel_ds_docsis31_power_level": {
+                "data_path": "data.channelDs.docsis31",
+                "type": list,
+                "next": {
+                    "type": str,
+                    "value_function": lambda data: data.get("powerLevel"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis31
+            },
+            "cable_channel_ds_docsis31_non_corrected_errors": {
+                "data_path": "data.channelDs.docsis31",
+                "type": list,
+                "next": {
+                    "type": int,
+                    "value_function": lambda data: data.get("nonCorrErrors"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis31
+            },
+            "cable_channel_ds_docsis31_modulation": {
+                "data_path": "data.channelDs.docsis31",
+                "type": list,
+                "next": {
+                    "type": str,
+                    "value_function": lambda data: data.get("modulation"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis31
+            },
+            "cable_channel_ds_docsis31_plc": {
+                "data_path": "data.channelDs.docsis31",
+                "type": list,
+                "next": {
+                    "type": str,
+                    "value_function": lambda data: data.get("plc"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis31
+            },
+            "cable_channel_ds_docsis31_mer": {
+                "data_path": "data.channelDs.docsis31",
+                "type": list,
+                "next": {
+                    "type": str,
+                    "value_function": lambda data: data.get("mer"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis31
+            },
+            "cable_channel_ds_docsis31_fft": {
+                "data_path": "data.channelDs.docsis31",
+                "type": list,
+                "next": {
+                    "type": str,
+                    "value_function": lambda data: data.get("fft"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis31
+            },
+            "cable_channel_ds_docsis31_frequency": {
+                "data_path": "data.channelDs.docsis31",
+                "type": list,
+                "next": {
+                    "type": str,
+                    "value_function": lambda data: data.get("frequency"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis31
+            },
+
+            # DOCSIS 3.0 down stream
+            "cable_channel_ds_docsis30_power_level": {
+                "data_path": "data.channelDs.docsis30",
+                "type": list,
+                "next": {
+                    "type": str,
+                    "value_function": lambda data: data.get("powerLevel"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis30
+            },
+            "cable_channel_ds_docsis30_non_corrected_errors": {
+                "data_path": "data.channelDs.docsis30",
+                "type": list,
+                "next": {
+                    "type": int,
+                    "value_function": lambda data: data.get("nonCorrErrors"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis30
+            },
+            "cable_channel_ds_docsis30_modulation": {
+                "data_path": "data.channelDs.docsis30",
+                "type": list,
+                "next": {
+                    "type": str,
+                    "value_function": lambda data: data.get("modulation"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis30
+            },
+            "cable_channel_ds_docsis30_corrected_errors": {
+                "data_path": "data.channelDs.docsis30",
+                "type": list,
+                "next": {
+                    "type": int,
+                    "value_function": lambda data: data.get("corrErrors"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis30
+            },
+            "cable_channel_ds_docsis30_latency": {
+                "data_path": "data.channelDs.docsis30",
+                "type": list,
+                "next": {
+                    "type": float,
+                    "value_function": lambda data: data.get("latency"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis30
+            },
+            "cable_channel_ds_docsis30_mse": {
+                "data_path": "data.channelDs.docsis30",
+                "type": list,
+                "next": {
+                    "type": float,
+                    "value_function": lambda data: data.get("mse"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis30
+            },
+            "cable_channel_ds_docsis30_frequency": {
+                "data_path": "data.channelDs.docsis30",
+                "type": list,
+                "next": {
+                    "type": str,
+                    "value_function": lambda data: data.get("frequency"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis30
+            },
+
+            # DOCSIS 3.1 up stream
+            "cable_channel_us_docsis31_power_level": {
+                "data_path": "data.channelUs.docsis31",
+                "type": list,
+                "next": {
+                    "type": str,
+                    "value_function": lambda data: data.get("powerLevel"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis31
+            },
+            "cable_channel_us_docsis31_modulation": {
+                "data_path": "data.channelUs.docsis31",
+                "type": list,
+                "next": {
+                    "type": str,
+                    "value_function": lambda data: data.get("modulation"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis31
+            },
+            "cable_channel_us_docsis31_activesub": {
+                "data_path": "data.channelUs.docsis31",
+                "type": list,
+                "next": {
+                    "type": int,
+                    "value_function": lambda data: data.get("activesub"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis31
+            },
+            "cable_channel_us_docsis31_fft": {
+                "data_path": "data.channelUs.docsis31",
+                "type": list,
+                "next": {
+                    "type": str,
+                    "value_function": lambda data: data.get("fft"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis31
+            },
+            "cable_channel_us_docsis31_frequency": {
+                "data_path": "data.channelUs.docsis31",
+                "type": list,
+                "next": {
+                    "type": str,
+                    "value_function": lambda data: data.get("frequency"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis31
+            },
+
+            # DOCSIS 3.0 up stream
+            "cable_channel_us_docsis30_power_level": {
+                "data_path": "data.channelUs.docsis30",
+                "type": list,
+                "next": {
+                    "type": str,
+                    "value_function": lambda data: data.get("powerLevel"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis30
+            },
+            "cable_channel_us_docsis30_modulation": {
+                "data_path": "data.channelUs.docsis30",
+                "type": list,
+                "next": {
+                    "type": str,
+                    "value_function": lambda data: data.get("modulation"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis30
+            },
+            "cable_channel_us_docsis30_multiplex": {
+                "data_path": "data.channelUs.docsis30",
+                "type": list,
+                "next": {
+                    "type": str,
+                    "value_function": lambda data: data.get("multiplex"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis30
+            },
+            "cable_channel_us_docsis30_frequency": {
+                "data_path": "data.channelUs.docsis30",
+                "type": list,
+                "next": {
+                    "type": str,
+                    "value_function": lambda data: data.get("frequency"),
+                    "tags_function": lambda data: {"id": data.get("channelID")}
+                },
+                "exclude_filter_function": exclude_filter_docsis30
+            },
         }
     }
 )
