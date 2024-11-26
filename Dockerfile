@@ -1,4 +1,4 @@
-FROM python:3.9-slim
+FROM python:3.12-slim
 
 # Make the /app dir
 RUN mkdir /app
@@ -11,7 +11,12 @@ COPY fritzinfluxdb.py requirements.txt /app/
 COPY fritzinfluxdb /app/fritzinfluxdb
 
 # Install any needed packages specified in requirements.txt
-RUN pip install --trusted-host pypi.python.org -r requirements.txt
+RUN apt-get update && apt-get install -y --no-install-recommends gcc g++ && \
+    PYTHONDONTWRITEBYTECODE=1 pip install --no-compile --no-cache-dir -r requirements.txt && \
+    apt-get remove --yes gcc g++ && \
+    apt-get clean autoclean && \
+    apt-get autoremove --yes && \
+    rm -rf /var/lib/apt/lists/*
 
 #create config directory for external mount
 RUN mkdir config
