@@ -36,6 +36,58 @@ This is normal as there are values not available on certain models.
 ### Environment
 * Grafana >= 9.1.0
 
+### Guest WLAN fallback (TR-064)
+
+Some FRITZ!OS 8.50 installations return UPnP error 504 for
+`WLANConfiguration:3/GetInfo`. For this action only, FritzInfluxDB uses `GetSSID`
+as a fallback on each 504 response. After three consecutive matching failures,
+it skips `GetInfo` until the next program start and logs one warning. A successful
+primary request or a different primary error resets the failure counter. Restarting
+the program retries `GetInfo`, allowing firmware fixes to be detected.
+
+`GetTotalAssociations` is queried independently, including when the fallback
+fails. In fallback mode, the existing `wlan3_ssid` and `wlan3_associations` metrics
+remain available. `wlan3_status`, `wlan3_channel`, and `wlan3_802.11_standard` are
+omitted when absent from the response; no replacement values are generated.
+Routers with working `GetInfo` still provide all existing metrics.
+
+Other services, WLAN interfaces 1 and 2, and DSL queries keep their existing
+behavior. Other connection errors and failed fallback requests remain visible.
+An HTTP 504 response alone does not activate this UPnP fallback. This change does
+not discover alternative guest WLAN interfaces on tri-band routers.
+
+Run the hardware-independent regression tests after installing the requirements:
+
+```shell
+python -m unittest discover -s test -v
+```
+
+To build a local image from this checkout:
+
+```shell
+docker build -t fritzinfluxdb:guest-wlan-fix .
+```
+
+In an existing Portainer stack that mounts the configuration at
+`/app/fritzinfluxdb.ini`, update the FritzInfluxDB service with:
+
+```yaml
+image: fritzinfluxdb:guest-wlan-fix
+command:
+  - python
+  - /app/fritzinfluxdb.py
+  - -c
+  - /app/fritzinfluxdb.ini
+  - -d
+```
+
+Build the image on the Docker host used by Portainer. The explicit configuration
+path is required for this mount because the default is
+`/app/config/fritzinfluxdb.ini`. Keep the existing mounts, InfluxDB and Grafana
+services, and data volumes. To roll back, restore `bbricardo/fritzinfluxdb:1.2.4`
+and the previous command. Validate SSID, client count changes, and DSL readings
+on the actual router after deployment; the automated tests use simulated replies.
+
 ## Setup
 * here we assume we install in `/opt`
 

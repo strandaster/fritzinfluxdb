@@ -23,19 +23,26 @@ class FritzBoxAction:
         defines a single FritzBox query action
     """
 
-    available = True
-
     def __init__(self, action: Union[AnyStr, Dict] = None) -> None:
 
         if action is None:
             do_error_exit("Missing action for FritzBoxAction")
 
+        self.available = True
         self.params = dict()
+        self.fallback_action = None
+        self.fallback_error_codes = ()
+        self.max_consecutive_failures = 3
+        self.consecutive_failures = 0
+        self.primary_disabled = False
         if isinstance(action, str):
             self.name = action
         elif isinstance(action, dict):
             self.name = action.get("name", None)
             self.params = action.get("params", dict())
+            self.fallback_action = action.get("fallback_action")
+            self.fallback_error_codes = tuple(action.get("fallback_error_codes", ()))
+            self.max_consecutive_failures = action.get("max_consecutive_failures", 3)
         else:
             do_error_exit(f"A FritzBoxAction param action must be a string or dict, got '{type(action)}'")
 

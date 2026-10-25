@@ -180,7 +180,12 @@ tr069_services.extend([
     {
         "name": "WLANConfiguration:3",
         "actions": [
-            "GetInfo",
+            {
+                "name": "GetInfo",
+                "fallback_action": "GetSSID",
+                "fallback_error_codes": [504],
+                "max_consecutive_failures": 3
+            },
             "GetTotalAssociations"
         ],
         "value_instances": {
