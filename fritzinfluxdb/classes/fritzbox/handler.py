@@ -8,6 +8,7 @@
 #  repository or visit: <https://opensource.org/licenses/MIT>.
 
 import asyncio
+import re
 
 import urllib3
 import requests
@@ -173,6 +174,60 @@ class FritzBoxHandler(FritzBoxHandlerBase):
         if self.init_successful is True:
             log.info(f"Closed {self.name} connection")
 
+    @staticmethod
+    def _upnp_error_code(error):
+        """Read a UPnP code without confusing it with an HTTP status or URL."""
+        for attribute in ("error_code", "errorCode"):
+            value = getattr(error, attribute, None)
+            if isinstance(value, int):
+                return value
+            if isinstance(value, str) and value.isdecimal():
+                return int(value)
+
+        match = re.search(r"\berrorCode\s*:\s*([0-9]+)\b", str(error))
+        return int(match.group(1)) if match else None
+
+    def _call_action(self, service, action):
+        """Use a configured fallback, keeping primary failures local to this action."""
+        if not action.primary_disabled:
+            try:
+                result = self.session.call_action(service.name, action.name, **action.params)
+            except FritzConnectionException as error:
+                error_code = self._upnp_error_code(error)
+                if not action.fallback_action or error_code not in action.fallback_error_codes:
+                    action.consecutive_failures = 0
+                    raise
+
+                action.consecutive_failures += 1
+                if action.consecutive_failures >= action.max_consecutive_failures:
+                    action.primary_disabled = True
+                    log.warning(
+                        f"TR-064 {service.name}/{action.name} returned UPnP error {error_code}. "
+                        f"Using {action.fallback_action} fallback; primary action disabled until restart."
+                    )
+                else:
+                    log.debug(f"TR-064 {service.name}/{action.name} returned UPnP error {error_code}; "
+                              f"trying {action.fallback_action} fallback")
+            except Exception:
+                action.consecutive_failures = 0
+                raise
+            else:
+                action.consecutive_failures = 0
+                return result
+
+        try:
+            result = self.session.call_action(service.name, action.fallback_action, **action.params)
+        except Exception as error:
+            # A failed fallback must remain visible and must not disable the service
+            # or its other actions during discovery. Avoid logging SOAP payloads.
+            error_code = self._upnp_error_code(error)
+            detail = f"UPnP error {error_code}" if error_code is not None else type(error).__name__
+            log.error(f"TR-064 {service.name}/{action.fallback_action} fallback failed: {detail}")
+            return None
+
+        log.debug(f"TR-064 {service.name}/{action.fallback_action} fallback returned successfully")
+        return result
+
     def query_service_data(self, service):
 
         def service_invalid_log(log_message):
@@ -203,7 +258,7 @@ class FritzBoxHandler(FritzBoxHandlerBase):
 
             # add parameters
             try:
-                call_result = self.session.call_action(service.name, action.name, **action.params)
+                call_result = self._call_action(service, action)
             except FritzServiceError:
                 service_invalid_log(f"Requested invalid service: {service.name}")
                 if self.discovery_done is False:
@@ -233,7 +288,8 @@ class FritzBoxHandler(FritzBoxHandlerBase):
             if call_result is None:
                 continue
 
-            debug_msg = f"Request {self.name} service '{service.name}' returned successfully: {action.name}"
+            requested_action = action.fallback_action if action.consecutive_failures else action.name
+            debug_msg = f"Request {self.name} service '{service.name}' returned successfully: {requested_action}"
             if len(action.params) > 0:
                 debug_msg += f" ({action.params})"
             log.debug(debug_msg)
